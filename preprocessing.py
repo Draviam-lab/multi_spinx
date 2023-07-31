@@ -53,22 +53,19 @@ import time
 import argparse
 import warnings
 import os
-warnings.filterwarnings("ignore") # ignore warnings
-since = time.time()
 
 import numpy as np
-from scipy import ndimage
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from collections import Counter
 
-from skimage import segmentation, morphology
 from skimage import io
-from skimage.measure import regionprops
 from skimage import transform
 
-import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+
+warnings.filterwarnings("ignore") # ignore warnings
+since = time.time()
 
 # arguments definition
 if __name__ == "__main__":
@@ -167,9 +164,11 @@ def img_read(img_path, time_stamp, z_slice, spindle_channel, cell_channel):
         
     """
 
+    from skimage.io import imread
+
     # source image read, the sample image (stacked-tiff) is at size {TT, ZZ, XX, YY, CC}
     # TT: time-stamp, ZZ: z-slice, XX and YY: size, CC: channels
-    img = io.imread(img_path)
+    img = imread(img_path)
     img_spindle = img[time_stamp - 1, z_slice - 1, :, :, spindle_channel]
     img_cell= img[time_stamp - 1, z_slice - 1, :, :, cell_channel]
     # normalisation to the [0, 1] scale for img_spindle and img_cell
@@ -209,19 +208,24 @@ def spindle_segmentation(img):
         
     """
     
+    from scipy.ndimage import binary_fill_holes, label
+    from skimage.segmentation import watershed
+    from skimage.morphology import remove_small_objects
+    from skimage.measure import regionprops
+    
     # segmentation of the spindle(s) using the traditional watershed method
     # find the watershed markers of the background and the nuclei
     markers = np.zeros_like(img)
     markers[img < 0.3] = 1
     markers[img > 0.4] = 2
     # watershed segmentation of the spindles
-    seg_spindle = segmentation.watershed(img, markers)
-    seg_spindle = ndimage.binary_fill_holes(seg_spindle- 1)
+    seg_spindle = watershed(img, markers)
+    seg_spindle = binary_fill_holes(seg_spindle- 1)
     # remove small objects with boolean input "seg"
-    seg_spindle = morphology.remove_small_objects(seg_spindle, 900)
+    seg_spindle = remove_small_objects(seg_spindle, 900)
         
     # generate spindle instance map based on the conventional watershed segmentation
-    spindle_instance, nr_spindle = ndimage.label(seg_spindle)
+    spindle_instance, nr_spindle = label(seg_spindle)
     # spindle regions cropping using skimage.measure.regionprops
     # refer to https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
     spindle_regions = regionprops(spindle_instance)
@@ -293,6 +297,8 @@ def bounding_box_plot(img, bbox_list):
     Currently none, the function only makes the plot.
     
     """
+    
+    import matplotlib.patches as mpatches
     
     # TODO: this function could be extended for generating the overlapping image
     # or movies (i.e., draw bounding boxes on top of the spindle and cell images 
