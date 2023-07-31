@@ -14,26 +14,36 @@ the SpinX-cell-cortex module for cell cortex segmentation, and finally the
 outputs of SpinX-spindle and SpinX-cell-cortex should be sent to SpinX-modelling
 module for 3D modelling.
 
-Parameters: 
-    input_img: the input source image for nucleus counting (multi-stack tiff)
+Parameters
+----------
+input_img: str
+    The input source image for nucleus counting (multi-stack tiff).
+
+time_stamp: int
+    Define the start frame to track spindles, frame ID starting from 1, default 
+    set to 1.
+
+z_slice: int
+    The selected z-slice reference, starting from 1.
+
+spindle_channel: int
+    The spindle channel ID, starting from 0.
+
+cell_channel: int
+    The cell (or brightfield) channel ID, starting from 0.
+
+padding: int
+    Define how many pixels to extend for each side of the bounding boxes to make 
+    them larger, default value set to 0.
+
+output: str
+    Define the output folder path.
+
+nr_frames: int
+    Define how many frames to track the movie.
     
-    time_stamp: define the start frame to track spindles, frame ID starting 
-    from 1, default set to 1
-    
-    z_slice: the selected z-slice reference, starting from 1
-    
-    spindle_channel: the spindle channel ID, starting from 0
-    
-    cell_channel: the cell (or brightfield) channel ID, starting from 0
-    
-    padding: define how many pixels to extend for each side of the bounding boxes 
-    to make them larger, default value set to 0
-    
-    output: define the output folder path
-    
-    nr_frames: define how many frames to track the movie
-    
-Returns: 
+Returns
+-------
 # TODO: TBC
 
 """
@@ -124,19 +134,49 @@ if __name__ == "__main__":
     opt = parser.parse_args()
     print(opt)
 
+def img_read(img_path, time_stamp, z_slice, spindle_channel, cell_channel):
+    """
+    This function read the specific image channels for specific time frame under
+    specific z-slide. 
+    
+    Parameters
+    ----------
+    img_path: str
+        The input source image for nucleus counting (multi-stack tiff).
+        
+    time_stamp: int
+        Define the start frame to track spindles, frame ID starting from 1, 
+        default set to 1.
+        
+    z_slice: int
+        The selected z-slice reference, starting from 1.
+        
+    spindle_channel: int
+        The spindle channel ID, starting from 0.
+        
+    cell_channel: int
+        The cell cortex (brightfield) channel ID, starting from 0.
 
-# TODO: these to be put within the tracking code
-# source image read
-# the sample image (stacked-tiff) is at size {TT, ZZ, XX, YY, CC}
-# TT: time-stamp, ZZ: z-slice, XX and YY: size, CC: channels
-img = io.imread(f"{opt.input_img}")
-img_spindle = img[opt.time_stamp - 1, opt.z_slice - 1, :, :, opt.spindle_channel]
-img_cell= img[opt.time_stamp - 1, opt.z_slice - 1, :, :, opt.cell_channel]
-# normalisation to the [0, 1] scale for img_spindle and img_cell
-img_spindle_norm = (img_spindle - img_spindle.min())/(img_spindle.max() - img_spindle.min())
-img_cell_norm = (img_cell - img_cell.min())/(img_cell.max() - img_cell.min())
+    Returns
+    -------
+    img_spindle_norm: ndarray (2D)
+        Data array stands for the the normalised (0-1 scale) spindle image.
+    
+    img_cell_norm: ndarray (2D)
+        Data array stands for the the normalised (0-1 scale) cell cortex image.
+        
+    """
 
-
+    # source image read, the sample image (stacked-tiff) is at size {TT, ZZ, XX, YY, CC}
+    # TT: time-stamp, ZZ: z-slice, XX and YY: size, CC: channels
+    img = io.imread(img_path)
+    img_spindle = img[time_stamp - 1, z_slice - 1, :, :, spindle_channel]
+    img_cell= img[time_stamp - 1, z_slice - 1, :, :, cell_channel]
+    # normalisation to the [0, 1] scale for img_spindle and img_cell
+    img_spindle_norm = (img_spindle - img_spindle.min())/(img_spindle.max() - img_spindle.min())
+    img_cell_norm = (img_cell - img_cell.min())/(img_cell.max() - img_cell.min())
+    
+    return img_spindle_norm, img_cell_norm
 
 def spindle_segmentation(img):
     """
@@ -146,15 +186,29 @@ def spindle_segmentation(img):
     (detected objects), the centroid coordinators and local centroid (relating 
     to the bounding box) of each spindle.
     
-    Parameters: 
-        Parameter 1: the normalised (at 0-1 scale) spindle image
+    Parameters
+    ----------
+    img: ndarray (2D)
+        Data array stands for the the normalised (0-1 scale) spindle image.
         
-    Returns: 
-        Return 1: the segmented spindles (array of bool)
-        Return 2: the list of bounding boxes for each spindle
-        Return 3: the list of centroid for each spindle
-        Return 4: the list of local centroid (relating to bounding box) for each spindle
+    Returns
+    -------
+    seg_spindle: ndarray of bool (2D)
+        The binary segmentation map.
+        
+    bbox_list: list
+        The list of bounding boxes (min_row, min_col, max_row, max_col) for 
+        each detected spindle.
+        
+    centroid_list: list
+        The list of centroid (row, col) for each detected spindle.
+    
+    centroid_local_list: list
+        The list of local centroid (row, col) relating to bounding box for 
+        each detected spindle.
+        
     """
+    
     # segmentation of the spindle(s) using the traditional watershed method
     # find the watershed markers of the background and the nuclei
     markers = np.zeros_like(img)
@@ -194,11 +248,11 @@ def spindle_segmentation(img):
         minc, maxc = center_col - size / 2, center_col + size / 2
         # Ensure the bounding box does not go beyond the image boundaries
         minr, minc = max(0, minr), max(0, minc)
-        maxr, maxc = min(img_spindle.shape[0], maxr), min(img_spindle.shape[1], maxc)  
+        maxr, maxc = min(img.shape[0], maxr), min(img.shape[1], maxc)  
         
         # append the new bounding box to the list, 
         # only append the new bounding box if it does not touch the image boundary
-        if minr > 0 and minc > 0 and maxr < img_spindle.shape[0] and maxc < img_spindle.shape[1]:
+        if minr > 0 and minc > 0 and maxr < img.shape[0] and maxc < img.shape[1]:
             bbox_list.append((minr, minc, maxr, maxc))
         
             # centroidarray coordinate tuple (row, col)
@@ -209,22 +263,41 @@ def spindle_segmentation(img):
     
     # define the function returns
     return seg_spindle, bbox_list, centroid_list, centroid_local_list
-    
 
-
-    
+# Note: the below lines are for functions (img_read, spindle_segmentation) testing
+# TODO: should be removed once script is completed
+img_spindle_norm, img_cell_norm = img_read(
+    f"{opt.input_img}", 
+    opt.time_stamp, 
+    opt.z_slice, 
+    opt.spindle_channel, 
+    opt.cell_channel)
 seg_spindle, bbox_list, centroid_list, centroid_local_list = spindle_segmentation(img_spindle_norm)
-  
-
 
 # draw bounding box on top of the original images for illustration purpose
 def bounding_box_plot(img, bbox_list):
     """
-    This function plots the bounding box for illustration purpose
-    Inputs: the source spindle image (single channel), bounding box list
-    Output: the overlay image of bounding boxes on the original spindle image
+    This function plots the bounding box for illustration purpose.
+
+    Parameters
+    ----------
+    img: ndarray (2D)
+        Data array stands for the the normalised (0-1 scale) spindle image.
+        
+    bbox_list: list
+        The list of bounding boxes (min_row, min_col, max_row, max_col) for 
+        each detected spindle.
+
+    Returns
+    -------
+    Currently none, the function only makes the plot.
     
     """
+    
+    # TODO: this function could be extended for generating the overlapping image
+    # or movies (i.e., draw bounding boxes on top of the spindle and cell images 
+    # or movies) as one of the script outputs.
+    
     # define the figure and plot the original image
     fig, ax = plt.subplots(figsize=(10, 10))
     ax.imshow(img)
@@ -241,12 +314,11 @@ def bounding_box_plot(img, bbox_list):
     ax.set_axis_off()
     plt.tight_layout()
     plt.show()  
-    
+
+# Note: the below lines are for functions (bounding_box_plot) testing
+# TODO: should be removed once script is completed    
 bounding_box_plot(img_spindle_norm, bbox_list)
 bounding_box_plot(img_cell_norm, bbox_list)
-
-
-
 
 # # TODO: these to be put within the tracking code - these to be put as a function
 # # export cropped images (spindle channel and cell channel) based on bounding boxes
@@ -270,11 +342,6 @@ bounding_box_plot(img_cell_norm, bbox_list)
 #     io.imsave(os.path.join(f"{opt.output}/spindle", f"spindle_{i}.tif"), resized_spindle)
 #     io.imsave(os.path.join(f"{opt.output}/cell", f"cell_{i}.tif"), resized_cell)
     
-
-
-
-
-
 # List to store the tracked spindles across all frames
 tracked_spindles = []
 
@@ -342,11 +409,6 @@ for frame_number in range(opt.time_stamp - 1, opt.time_stamp + opt.nr_frames - 1
 
 # Now the tracked_spindles list contains all spindles across all frames, with an additional 'tracked_spindle_number' field indicating the identity of the spindle across frames
 
-
-
-
-
-
     
 # TODO: rename the output images (a combination of experiment name, time-stamp name etc ...)
 
@@ -354,16 +416,9 @@ for frame_number in range(opt.time_stamp - 1, opt.time_stamp + opt.nr_frames - 1
 
 # TODO: add a csv file showing spindles and cells as one of the output
 
-# TODO: can be optimised in the future by cropping the image with selected channel(s)
-# with continuous time stamps. For example, if use the opt.time_stamp as the
-# starting time stamp, and add a parameter opt.time_stamp_count standing for
-# how many continuous time stamps should be taken into account. Might need to 
-# use other channel's information to define when to start and when to stop the
-# SpinX tracking.
-
 # TODO: use the brightfield channel to measure ellipticity change
 
-
-
-
+# debug print    
+time_elapsed = time.time() - since
+print("Testing complete in {:.0f}m {:.0f}s".format(time_elapsed // 60, time_elapsed % 60)) 
 
