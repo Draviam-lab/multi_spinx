@@ -4,17 +4,37 @@ Created on Fri Jun 23 12:24:57 2023
 
 @author: binghao chai
 
-This script tracks the movement 
-This script is for the input movie pre-processing of the multi-spindle tracking 
-task prior to SpinX modules.
+This script tracks the movements of multi spindles in a microscopy biology movie.
+Generally, the script outputs detected spindles and their underlying brightfield 
+cells as cropped images to fit the existing SpinX modules.
 
+The cropped spindle images should be sent to SpinX-spindle module for spindle 
+segmentation, and the cropped brightfield cell cortex images should be sent to 
+the SpinX-cell-cortex module for cell cortex segmentation, and finally the
+outputs of SpinX-spindle and SpinX-cell-cortex should be sent to SpinX-modelling
+module for 3D modelling.
 
 Parameters: 
-    Parameter 1: the normalised (at 0-1 scale) spindle image
-        
+    input_img: the input source image for nucleus counting (multi-stack tiff)
+    
+    time_stamp: define the start frame to track spindles, frame ID starting 
+    from 1, default set to 1
+    
+    z_slice: the selected z-slice reference, starting from 1
+    
+    spindle_channel: the spindle channel ID, starting from 0
+    
+    cell_channel: the cell (or brightfield) channel ID, starting from 0
+    
+    padding: define how many pixels to extend for each side of the bounding boxes 
+    to make them larger, default value set to 0
+    
+    output: define the output folder path
+    
+    nr_frames: define how many frames to track the movie
+    
 Returns: 
 # TODO: TBC
-
 
 """
 
