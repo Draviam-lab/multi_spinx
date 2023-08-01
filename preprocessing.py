@@ -78,12 +78,11 @@ if __name__ == "__main__":
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
-        # the time-stamp starts from 1, 
-        # so when coding, need to use (opt.time_stamp-1) as the time-stamp reference
+        # the time-stamp starts from 0, 
         "--time_stamp",
         type = int, 
-        default = 1, 
-        help = "define the start frame to track spindles, frame ID starting from 1, default set to 1" 
+        default = 0, 
+        help = "define the start frame to track spindles, frame ID starting from 0, default set to 0" 
         )
     parser.add_argument(
         # the z-slice starts from 1, 
@@ -169,8 +168,8 @@ def img_read(img_path, time_stamp, z_slice, spindle_channel, cell_channel):
     # source image read, the sample image (stacked-tiff) is at size {TT, ZZ, XX, YY, CC}
     # TT: time-stamp, ZZ: z-slice, XX and YY: size, CC: channels
     img = imread(img_path)
-    img_spindle = img[time_stamp - 1, z_slice - 1, :, :, spindle_channel]
-    img_cell= img[time_stamp - 1, z_slice - 1, :, :, cell_channel]
+    img_spindle = img[time_stamp, z_slice - 1, :, :, spindle_channel]
+    img_cell= img[time_stamp, z_slice - 1, :, :, cell_channel]
     # normalisation to the [0, 1] scale for img_spindle and img_cell
     img_spindle_norm = (img_spindle - img_spindle.min())/(img_spindle.max() - img_spindle.min())
     img_cell_norm = (img_cell - img_cell.min())/(img_cell.max() - img_cell.min())
@@ -268,16 +267,6 @@ def spindle_segmentation(img):
     # define the function returns
     return seg_spindle, bbox_list, centroid_list, centroid_local_list
 
-# Note: the below lines are for functions (img_read, spindle_segmentation) testing
-# TODO: should be removed once script is completed
-img_spindle_norm, img_cell_norm = img_read(
-    f"{opt.input_img}", 
-    opt.time_stamp, 
-    opt.z_slice, 
-    opt.spindle_channel, 
-    opt.cell_channel)
-seg_spindle, bbox_list, centroid_list, centroid_local_list = spindle_segmentation(img_spindle_norm)
-
 # draw bounding box on top of the original images for illustration purpose
 def bounding_box_plot(img, bbox_list):
     """
@@ -320,11 +309,19 @@ def bounding_box_plot(img, bbox_list):
     ax.set_axis_off()
     plt.tight_layout()
     plt.show()  
-
-# Note: the below lines are for functions (bounding_box_plot) testing
-# TODO: should be removed once script is completed    
-bounding_box_plot(img_spindle_norm, bbox_list)
-bounding_box_plot(img_cell_norm, bbox_list)
+ 
+# # Note: the below lines are for functions img_read, spindle_segmentation 
+# # and bounding_box_plot testing
+# # TODO: should be removed once script is completed
+# img_spindle_norm, img_cell_norm = img_read(
+#     f"{opt.input_img}", 
+#     opt.time_stamp, 
+#     opt.z_slice, 
+#     opt.spindle_channel, 
+#     opt.cell_channel)
+# seg_spindle, bbox_list, centroid_list, centroid_local_list = spindle_segmentation(img_spindle_norm)
+# bounding_box_plot(img_spindle_norm, bbox_list)
+# bounding_box_plot(img_cell_norm, bbox_list)
 
 # # TODO: these to be put within the tracking code - these to be put as a function
 # # export cropped images (spindle channel and cell channel) based on bounding boxes
@@ -348,22 +345,41 @@ bounding_box_plot(img_cell_norm, bbox_list)
 #     io.imsave(os.path.join(f"{opt.output}/spindle", f"spindle_{i}.tif"), resized_spindle)
 #     io.imsave(os.path.join(f"{opt.output}/cell", f"cell_{i}.tif"), resized_cell)
     
-# List to store the tracked spindles across all frames
+# list to store the tracked spindles across all frames,
+# with an additional tracked_spindle_number field indicating the identity of 
+# the spindle across frames.
 tracked_spindles = []
 
-# Process each frame
-for frame_number in range(opt.time_stamp - 1, opt.time_stamp + opt.nr_frames - 1):
-    # (Insert code here to extract the current frame and perform segmentation and bounding box generation)
-    # TODO: need to do some encapsulation for the segmentation and bounding box generation to fit here
+# process each frame
+for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
+    # frame_number here is not the absolute frame_number of the multi-stacked tiff
+    # but the relative frame_number in the [start_time_stamp - 1, end_time_stamp) range.
     
-    # List to store the spindles in the current frame
+    # image read for the current frame,
+    # the spindle and cell cortex channels are both normalised
+    img_spindle_norm, img_cell_norm = img_read(
+        f"{opt.input_img}", 
+        frame_number, 
+        opt.z_slice, 
+        opt.spindle_channel, 
+        opt.cell_channel)
+    # perform spindle segmentation and bounding box generation for the current frame
+    seg_spindle, bbox_list, centroid_list, _ = spindle_segmentation(img_spindle_norm)
+    
+    # list to store the spindles in the current frame
     current_frame_spindles = []
 
-    # Traverse the properties of each spindle
-    for i in range(len(spindle_regions)):
-        # (Insert code here to compute the bounding box and centroid of the spindle)
+    # traverse the properties of each spindle
+    for i in range(len(bbox_list)):
+        # extract the bounding box and centroid indormation of the spindles
+        minr = bbox_list[i][0]
+        minc = bbox_list[i][1]
+        maxr = bbox_list[i][2]
+        maxc = bbox_list[i][3]
+        centroid_row = centroid_list[i][0]
+        centroid_col = centroid_list[i][1]
 
-        # Compute the area of the bounding box
+        # compute the area of the bounding box
         area = (maxr - minr) * (maxc - minc)
 
         # Store the spindle in the current frame list
@@ -373,47 +389,52 @@ for frame_number in range(opt.time_stamp - 1, opt.time_stamp + opt.nr_frames - 1
             'bounding_box': (minr, minc, maxr, maxc),
             'centroid': (centroid_row, centroid_col),
             'area': area,
+            'tracked_spindle_number': None,  # initialize tracked_spindle_number
         })
 
-    # If this is the first frame, just store the spindles without tracking
-    if frame_number == 0:
+    # if this is the first frame, just store the spindles without tracking
+    # if frame_number == opt.time_stamp:
+    #     tracked_spindles.extend(current_frame_spindles)
+    if frame_number == opt.time_stamp:
+        for i, spindle in enumerate(current_frame_spindles):
+            spindle['tracked_spindle_number'] = i
         tracked_spindles.extend(current_frame_spindles)
+
     else:
-        # Compute the cost matrix as the Euclidean distance between centroids in the last frame and the current frame
+        # compute the cost matrix as the Euclidean distance between centroids in the last frame and the current frame
         last_frame_spindles = [spindle for spindle in tracked_spindles if spindle['frame_number'] == frame_number - 1]
         last_frame_centroids = [spindle['centroid'] for spindle in last_frame_spindles]
         current_frame_centroids = [spindle['centroid'] for spindle in current_frame_spindles]
         cost_matrix = cdist(last_frame_centroids, current_frame_centroids)
 
-        # Use the Hungarian Algorithm to find the optimal assignment of spindles between frames
+        # use the Hungarian Algorithm to find the optimal assignment of spindles between frames
         row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
-        # Count the number of assignments to each spindle in the current frame
+        # count the number of assignments to each spindle in the current frame
         assignment_counts = Counter(col_ind)
 
-        # Assign the spindles in the current frame to the spindles in the last frame
+        # assign the spindles in the current frame to the spindles in the last frame
         for last_frame_index, current_frame_index in zip(row_ind, col_ind):
             # Get the spindles
             last_frame_spindle = last_frame_spindles[last_frame_index]
             current_frame_spindle = current_frame_spindles[current_frame_index]
 
-            # Check if the spindle has split, has disappeared, or is touching the image boundary
+            # check if the spindle has split, has disappeared, or is touching the image boundary
             if current_frame_spindle['area'] == 0 or \
                current_frame_spindle['bounding_box'][0] <= 0 or \
                current_frame_spindle['bounding_box'][1] <= 0 or \
-               current_frame_spindle['bounding_box'][2] >= img_spindle.shape[0] or \
-               current_frame_spindle['bounding_box'][3] >= img_spindle.shape[1] or \
+               current_frame_spindle['bounding_box'][2] >= img_spindle_norm.shape[0] or \
+               current_frame_spindle['bounding_box'][3] >= img_spindle_norm.shape[1] or \
                assignment_counts[current_frame_index] > 1:
-                # If any of these conditions are true, don't assign it a tracked_spindle_number
+                # if any of these conditions are true, don't assign it a tracked_spindle_number
                 continue
 
-            # If none of these conditions are true, assign it the same tracked_spindle_number as the last frame
+            # if none of these conditions are true, assign it the same tracked_spindle_number as the last frame
             current_frame_spindle['tracked_spindle_number'] = last_frame_spindle['tracked_spindle_number']
 
-        # Add the spindles in the current frame to the list of all tracked spindles
+        # add the spindles in the current frame to the list of all tracked spindles
         tracked_spindles.extend(current_frame_spindles)
-
-# Now the tracked_spindles list contains all spindles across all frames, with an additional 'tracked_spindle_number' field indicating the identity of the spindle across frames
+        
 
     
 # TODO: rename the output images (a combination of experiment name, time-stamp name etc ...)
