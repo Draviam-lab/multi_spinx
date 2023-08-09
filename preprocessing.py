@@ -20,8 +20,8 @@ input_img: str
     The input source image for nucleus counting (multi-stack tiff).
 
 time_stamp: int
-    Define the start frame to track spindles, frame ID starting from 1, default 
-    set to 1.
+    Define the start frame to track spindles, frame ID starting from 0, default 
+    set to 0.
 
 z_slice: int
     The selected z-slice reference, starting from 1.
@@ -44,6 +44,8 @@ nr_frames: int
     
 Returns
 -------
+In the output folders, there is a csv file showing the tracked spindles across
+the time.
 # TODO: TBC
 
 """
@@ -54,6 +56,7 @@ import argparse
 import warnings
 import os
 
+import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
@@ -129,6 +132,9 @@ if __name__ == "__main__":
 
     opt = parser.parse_args()
     print(opt)
+
+# check whether output folder exist
+os.makedirs(f"{opt.output}", exist_ok = True)
 
 def img_read(img_path, time_stamp, z_slice, spindle_channel, cell_channel):
     """
@@ -284,7 +290,7 @@ def bounding_box_plot(img, bbox_list):
     Returns
     -------
     Currently none, the function only makes the plot.
-    
+# TODO
     """
     
     import matplotlib.patches as mpatches
@@ -312,7 +318,6 @@ def bounding_box_plot(img, bbox_list):
  
 # # Note: the below lines are for functions img_read, spindle_segmentation 
 # # and bounding_box_plot testing
-# # TODO: should be removed once script is completed
 # img_spindle_norm, img_cell_norm = img_read(
 #     f"{opt.input_img}", 
 #     opt.time_stamp, 
@@ -344,17 +349,70 @@ def bounding_box_plot(img, bbox_list):
 #     # Save the cropped images as single-channel TIFF files
 #     io.imsave(os.path.join(f"{opt.output}/spindle", f"spindle_{i}.tif"), resized_spindle)
 #     io.imsave(os.path.join(f"{opt.output}/cell", f"cell_{i}.tif"), resized_cell)
+
+def spindles_to_csv(tracked_spindles, output_path):
+    """
+    This function converts the tracked_spindles to a csv file. The tracked_spindles 
+    should be a list of dictionary, and in the dictionary there are fields of
+    area (float), bounding_box (tuple), centroid (tuple), frame_number (int), 
+    spindle_number (int) and tracked_spindle_number (int).
+
+    Parameters
+    ----------
+    tracked_spindles : list (list of dictionary)
+        A list to store the tracked spindles across all frames, with an 
+        additional tracked_spindle_number field indicating the identity of 
+        the spindle across frames.
+        
+    output_path: str
+        The output path of the output csv file.
+
+    Returns
+    -------
+    This function will return and save a csv file containing tracked spindles 
+    information on selected path.
+    
+    """
+    
+    df = pd.DataFrame(tracked_spindles)
+
+    # sort the dataframe respectively for the tracked_spindle_number is or is not None
+    df_with_number = df[df['tracked_spindle_number'].notna()]
+    df_without_number = df[df['tracked_spindle_number'].isna()]
+
+    df_with_number = df_with_number.sort_values(by=['tracked_spindle_number', 'frame_number'])
+    df_without_number = df_without_number.sort_values(by=['frame_number', 'spindle_number'])
+
+    sorted_df = pd.concat([df_with_number, df_without_number])
+
+    # extract min_row, min_col, max_row, max_col from bounding_box
+    # extract centroid_row and centroid_col from centroid
+    sorted_df[['min_row', 'min_col', 'max_row', 'max_col']] = pd.DataFrame(
+        sorted_df['bounding_box'].tolist(), 
+        index = sorted_df.index
+        )
+    sorted_df[['centroid_row', 'centroid_col']] = pd.DataFrame(
+        sorted_df['centroid'].tolist(), 
+        index = sorted_df.index
+        )
+    # drop the bounding_box and centroid columns
+    sorted_df = sorted_df.drop(columns = ['bounding_box', 'centroid'])
+
+    # write to cSV
+    sorted_df.to_csv(
+        output_path, 
+        columns = ['tracked_spindle_number', 'frame_number', 'min_row', 'min_col', 'max_row', 'max_col', 'centroid_row', 'centroid_col'], 
+        index = False
+        )
     
 # list to store the tracked spindles across all frames,
 # with an additional tracked_spindle_number field indicating the identity of 
 # the spindle across frames.
 tracked_spindles = []
-
 # process each frame
-for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
-    # frame_number here is not the absolute frame_number of the multi-stacked tiff
-    # but the relative frame_number in the [start_time_stamp - 1, end_time_stamp) range.
-    
+# frame_number here is not the absolute frame_number of the multi-stacked tiff
+# but the relative frame_number in the [start_time_stamp - 1, end_time_stamp) range.
+for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):    
     # image read for the current frame,
     # the spindle and cell cortex channels are both normalised
     img_spindle_norm, img_cell_norm = img_read(
@@ -393,8 +451,6 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
         })
 
     # if this is the first frame, just store the spindles without tracking
-    # if frame_number == opt.time_stamp:
-    #     tracked_spindles.extend(current_frame_spindles)
     if frame_number == opt.time_stamp:
         for i, spindle in enumerate(current_frame_spindles):
             spindle['tracked_spindle_number'] = i
@@ -434,16 +490,15 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
 
         # add the spindles in the current frame to the list of all tracked spindles
         tracked_spindles.extend(current_frame_spindles)
-        
+
+# output the tracked_spindles in a csv file
+spindles_to_csv(tracked_spindles, f"{opt.output}/tracked_spindles_summary.csv")
 
     
 # TODO: rename the output images (a combination of experiment name, time-stamp name etc ...)
 
 # TODO: add overlay images as one of the output (spindle and cell cortex)
 
-# TODO: add a csv file showing spindles and cells as one of the output
-
-# TODO: use the brightfield channel to measure ellipticity change
 
 # debug print    
 time_elapsed = time.time() - since
