@@ -23,9 +23,6 @@ time_stamp: int
     Define the start frame to track spindles, frame ID starting from 0, default 
     set to 0.
 
-z_slice: int
-    The selected z-slice reference, starting from 1.
-
 spindle_channel: int
     The spindle channel ID, starting from 0.
 
@@ -87,14 +84,14 @@ if __name__ == "__main__":
         default = 0, 
         help = "define the start frame to track spindles, frame ID starting from 0, default set to 0" 
         )
-    parser.add_argument(
-        # the z-slice starts from 1, 
-        # so when coding, need to use (opt.z_slice-1) as the time-stamp reference
-        "--z_slice",
-        type = int, 
-        default = 3, 
-        help = "the selected z-slice reference, starting from 1" 
-        )
+    # parser.add_argument(
+    #     # the z-slice starts from 1, 
+    #     # so when coding, need to use (opt.z_slice-1) as the time-stamp reference
+    #     "--z_slice",
+    #     type = int, 
+    #     default = 3, 
+    #     help = "the selected z-slice reference, starting from 1" 
+    #     )
     parser.add_argument(
         # the spindle channel ID starts from 0
         "--spindle_channel",
@@ -136,10 +133,13 @@ if __name__ == "__main__":
 # check whether output folder exist
 os.makedirs(f"{opt.output}", exist_ok = True)
 
-def img_read(img_path, time_stamp, z_slice, spindle_channel, cell_channel):
+def img_read(img_path, time_stamp, spindle_channel, cell_channel):
     """
-    This function read the specific image channels for specific time frame under
-    specific z-slide. 
+    This function operates on the multi-stacked tiff image (movie) at 
+    {TT, ZZ, XX, YY, CC} structure, where TT stands for time-stamp, ZZ stands 
+    for z-slice, XX and YY stand for the size at each frame, and CC stands for
+    channels. This function reads the specific image channels for a specific 
+    time frame and applies a maximisation projection across all z-slices. 
     
     Parameters
     ----------
@@ -149,9 +149,6 @@ def img_read(img_path, time_stamp, z_slice, spindle_channel, cell_channel):
     time_stamp: int
         Define the start frame to track spindles, frame ID starting from 1, 
         default set to 1.
-        
-    z_slice: int
-        The selected z-slice reference, starting from 1.
         
     spindle_channel: int
         The spindle channel ID, starting from 0.
@@ -171,11 +168,14 @@ def img_read(img_path, time_stamp, z_slice, spindle_channel, cell_channel):
 
     from skimage.io import imread
 
-    # source image read, the sample image (stacked-tiff) is at size {TT, ZZ, XX, YY, CC}
-    # TT: time-stamp, ZZ: z-slice, XX and YY: size, CC: channels
-    img = imread(img_path)
-    img_spindle = img[time_stamp, z_slice - 1, :, :, spindle_channel]
-    img_cell= img[time_stamp, z_slice - 1, :, :, cell_channel]
+    # the sample image (stacked-tiff) is at {TT, ZZ, XX, YY, CC} structure
+    img = imread(img_path) # source image read
+
+    # selecting specific time-stamp and channel, 
+    # and then applying maximisation projection over all the z-slices
+    img_spindle = np.max(img[time_stamp, :, :, :, spindle_channel], axis = 0)
+    img_cell = np.max(img[time_stamp, :, :, :, cell_channel], axis = 0)
+    
     # normalisation to the [0, 1] scale for img_spindle and img_cell
     img_spindle_norm = (img_spindle - img_spindle.min())/(img_spindle.max() - img_spindle.min())
     img_cell_norm = (img_cell - img_cell.min())/(img_cell.max() - img_cell.min())
@@ -276,7 +276,8 @@ def spindle_segmentation(img):
 # draw bounding box on top of the original images for illustration purpose
 def bounding_box_plot(img, bbox_list):
     """
-    This function plots the bounding box for illustration purpose.
+    This function plots the bounding box for single frame on selected channel
+    for illustration purpose.
 
     Parameters
     ----------
@@ -289,15 +290,11 @@ def bounding_box_plot(img, bbox_list):
 
     Returns
     -------
-    Currently none, the function only makes the plot.
-# TODO
+    Currently none, the function only makes the plot for single frame on 
+    selected channel.
     """
     
     import matplotlib.patches as mpatches
-    
-    # TODO: this function could be extended for generating the overlapping image
-    # or movies (i.e., draw bounding boxes on top of the spindle and cell images 
-    # or movies) as one of the script outputs.
     
     # define the figure and plot the original image
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -315,13 +312,53 @@ def bounding_box_plot(img, bbox_list):
     ax.set_axis_off()
     plt.tight_layout()
     plt.show()  
- 
+
+# TODO below
+def bounding_box_plot_5d(img_5d, bbox_list_per_time, channel):
+    """
+    This function plots the bounding boxes on the maximisation projection 
+    across all the z-slices for each time point. The overlay images will then 
+    stacked as a multi-stacked tiff file as the output.
+
+    Parameters
+    ----------
+    img_5d: ndarray
+        The 5D multi-stacked TIFF image with dimensions {TT, ZZ, XX, YY, CC}.
+        
+    bbox_list_per_time: list of list
+        A list containing bounding box lists for each time point.
+        
+    channel: int
+        The channel ID to visualise (i.e., brightfield or spindle channel).
+    """
+    
+    import matplotlib.patches as mpatches
+    
+    num_time_points = img_5d.shape[0]
+    
+    for t in range(num_time_points):
+        # maximisation projection across z-slices for the current time point 
+        # on specified channel
+        max_projected_img = np.max(img_5d[t, :, :, :, channel], axis = 0)
+        
+        # Plotting the image
+        plt.imshow(max_projected_img, cmap='gray')
+        
+        # Plotting the bounding boxes for the current time point
+        for bbox in bbox_list_per_time[t]:
+            rect = mpatches.Rectangle((bbox[0], bbox[1]), bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=1, edgecolor='r', facecolor='none')
+            plt.gca().add_patch(rect)
+        
+        plt.show()
+    
+
+
+
 # # Note: the below lines are for functions img_read, spindle_segmentation 
 # # and bounding_box_plot testing
 # img_spindle_norm, img_cell_norm = img_read(
 #     f"{opt.input_img}", 
 #     opt.time_stamp, 
-#     opt.z_slice, 
 #     opt.spindle_channel, 
 #     opt.cell_channel)
 # seg_spindle, bbox_list, centroid_list, centroid_local_list = spindle_segmentation(img_spindle_norm)
@@ -418,7 +455,6 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
     img_spindle_norm, img_cell_norm = img_read(
         f"{opt.input_img}", 
         frame_number, 
-        opt.z_slice, 
         opt.spindle_channel, 
         opt.cell_channel)
     # perform spindle segmentation and bounding box generation for the current frame
