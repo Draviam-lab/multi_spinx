@@ -273,7 +273,6 @@ def spindle_segmentation(img):
     # define the function returns
     return seg_spindle, bbox_list, centroid_list, centroid_local_list
 
-# draw bounding box on top of the original images for illustration purpose
 def bounding_box_plot(img, bbox_list):
     """
     This function plots the bounding box for single frame on selected channel
@@ -297,7 +296,7 @@ def bounding_box_plot(img, bbox_list):
     import matplotlib.patches as mpatches
     
     # define the figure and plot the original image
-    fig, ax = plt.subplots(figsize=(10, 10))
+    fig, ax = plt.subplots(figsize = (10, 10))
     ax.imshow(img)
     
     # draw bounding boxes accordingly on the original image
@@ -313,8 +312,7 @@ def bounding_box_plot(img, bbox_list):
     plt.tight_layout()
     plt.show()  
 
-# TODO below
-def bounding_box_plot_5d(img_5d, bbox_list_per_time, channel):
+def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, channel):
     """
     This function plots the bounding boxes on the maximisation projection 
     across all the z-slices for each time point. The overlay images will then 
@@ -333,26 +331,46 @@ def bounding_box_plot_5d(img_5d, bbox_list_per_time, channel):
     """
     
     import matplotlib.patches as mpatches
+    from skimage.io import imread
+
+    # the sample image (stacked-tiff) is at {TT, ZZ, XX, YY, CC} structure
+    img_5d = imread(img_path) # source image read
     
-    num_time_points = img_5d.shape[0]
+    # define number of frames to track 
+    num_time_points = nr_frame # nr_frame should be opt.nr_frames or img_5d.shape[0]
+    
+    output_images = [] # create an empty list output_images before the loop
     
     for t in range(num_time_points):
         # maximisation projection across z-slices for the current time point 
         # on specified channel
         max_projected_img = np.max(img_5d[t, :, :, :, channel], axis = 0)
         
-        # Plotting the image
-        plt.imshow(max_projected_img, cmap='gray')
+        # define the figure and plot the original image
+        fig, ax = plt.subplots(figsize = (10, 10))
+        ax.imshow(max_projected_img, cmap = 'gray')
+        # ax.imshow(max_projected_img)
         
-        # Plotting the bounding boxes for the current time point
-        for bbox in bbox_list_per_time[t]:
-            rect = mpatches.Rectangle((bbox[0], bbox[1]), bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=1, edgecolor='r', facecolor='none')
-            plt.gca().add_patch(rect)
+        # plotting the bounding boxes for the current time point
+        for bboxes in bbox_list_per_time[t]:
+            minr, minc, maxr, maxc = bboxes
+            rect = mpatches.Rectangle(
+                (minc, minr), maxc - minc, maxr - minr, 
+                fill = False, edgecolor = 'red', linewidth = 4)
+            ax.add_patch(rect)
         
-        plt.show()
+        # capture the figure's image data without displaying it
+        ax.set_axis_off()
+        plt.tight_layout()
+        fig.canvas.draw()
+        data = np.array(fig.canvas.renderer.buffer_rgba())
+        output_images.append(data)
+        
+        plt.close(fig)
+        # plt.show()
     
-
-
+    # save the images as a multi-stacked TIFF file
+    io.imsave(output_path, np.array(output_images))
 
 # # Note: the below lines are for functions img_read, spindle_segmentation 
 # # and bounding_box_plot testing
@@ -387,7 +405,7 @@ def bounding_box_plot_5d(img_5d, bbox_list_per_time, channel):
 #     io.imsave(os.path.join(f"{opt.output}/spindle", f"spindle_{i}.tif"), resized_spindle)
 #     io.imsave(os.path.join(f"{opt.output}/cell", f"cell_{i}.tif"), resized_cell)
 
-def spindles_to_csv(tracked_spindles, output_path):
+def spindles_to_csv(output_path, tracked_spindles):
     """
     This function converts the tracked_spindles to a csv file. The tracked_spindles 
     should be a list of dictionary, and in the dictionary there are fields of
@@ -441,11 +459,16 @@ def spindles_to_csv(tracked_spindles, output_path):
         columns = ['tracked_spindle_number', 'frame_number', 'min_row', 'min_col', 'max_row', 'max_col', 'centroid_row', 'centroid_col'], 
         index = False
         )
+
+########## below code are the main flow for multi-spindle tracking ##########
     
 # list to store the tracked spindles across all frames,
 # with an additional tracked_spindle_number field indicating the identity of 
 # the spindle across frames.
 tracked_spindles = []
+# create another list of list stands for the list of the bounding boxes list 
+# across time frame
+bbox_list_per_time = [] 
 # process each frame
 # frame_number here is not the absolute frame_number of the multi-stacked tiff
 # but the relative frame_number in the [start_time_stamp - 1, end_time_stamp) range.
@@ -459,6 +482,8 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
         opt.cell_channel)
     # perform spindle segmentation and bounding box generation for the current frame
     seg_spindle, bbox_list, centroid_list, _ = spindle_segmentation(img_spindle_norm)
+    
+    bbox_list_per_time.append(bbox_list)
     
     # list to store the spindles in the current frame
     current_frame_spindles = []
@@ -528,13 +553,17 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
         tracked_spindles.extend(current_frame_spindles)
 
 # output the tracked_spindles in a csv file
-spindles_to_csv(tracked_spindles, f"{opt.output}/tracked_spindles_summary.csv")
+spindles_to_csv(f"{opt.output}/tracked_spindles_summary.csv", tracked_spindles)
+# output the overlay multi-stacked tiff file
+bounding_box_plot_5d(
+    f"{opt.input_img}", 
+    f"{opt.output}/tracked_spindles_summary.tif", 
+    opt.nr_frames, 
+    bbox_list_per_time, 
+    opt.spindle_channel
+    )
 
-    
-# TODO: rename the output images (a combination of experiment name, time-stamp name etc ...)
-
-# TODO: add overlay images as one of the output (spindle and cell cortex)
-
+# TODO: rename the output images tiles (a combination of experiment name, time-stamp name etc ...)
 
 # debug print    
 time_elapsed = time.time() - since
