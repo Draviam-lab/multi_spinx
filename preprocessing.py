@@ -331,7 +331,7 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
     """
     
     import matplotlib.patches as mpatches
-    from skimage.io import imread
+    from skimage.io import imread, imsave
 
     # the sample image (stacked-tiff) is at {TT, ZZ, XX, YY, CC} structure
     img_5d = imread(img_path) # source image read
@@ -351,14 +351,32 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
         ax.imshow(max_projected_img, cmap = 'gray')
         # ax.imshow(max_projected_img)
         
+        tracked_spindles_at_frame = [spindle for spindle in tracked_spindles if spindle.get('frame_number') == t]
+        
         # plotting the bounding boxes for the current time point
-        for bboxes in bbox_list_per_time[t]:
-            minr, minc, maxr, maxc = bboxes
+        for i in range(len(tracked_spindles_at_frame)):
+            # draw bounding box
+            minr, minc, maxr, maxc = tracked_spindles_at_frame[i]['bounding_box']
             rect = mpatches.Rectangle(
                 (minc, minr), maxc - minc, maxr - minr, 
                 fill = False, edgecolor = 'red', linewidth = 4)
             ax.add_patch(rect)
-        
+            # draw text along with the bounding box to identify spindle_id
+            centroid_y, centroid_x = tracked_spindles_at_frame[i]['centroid']
+            spindle_id = tracked_spindles_at_frame[i]['tracked_spindle_number']
+            if spindle_id != None:
+                ax.text(
+                    centroid_x, centroid_y, 
+                    str(spindle_id), 
+                    color = 'red', fontsize = 18
+                    )
+            elif spindle_id == None:
+                ax.text(
+                    centroid_x, centroid_y, 
+                    "new",
+                    color = 'red', fontsize = 18
+                    )
+            
         # capture the figure's image data without displaying it
         ax.set_axis_off()
         plt.tight_layout()
@@ -370,7 +388,7 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
         # plt.show()
     
     # save the images as a multi-stacked TIFF file
-    io.imsave(output_path, np.array(output_images))
+    imsave(output_path, np.array(output_images))
 
 # # Note: the below lines are for functions img_read, spindle_segmentation 
 # # and bounding_box_plot testing
@@ -400,7 +418,11 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
 #     output_size = (450, 450) # Define the size of the output images
 #     resized_spindle = transform.resize(cropped_spindle, output_size)
 #     resized_cell = transform.resize(cropped_cell, output_size)
-    
+# # TODO: the cropped images should be at the same scale for the same spindle (across time)
+# # even if the bounding boxes of the same spindle in different time frame is at
+# # different size.. One way to solve this is to fix the bounding box size for each
+# # of the spindle (eg. use the first bounding box at the first frame), and the 
+# # move the bounding box according with the centroid.
 #     # Save the cropped images as single-channel TIFF files
 #     io.imsave(os.path.join(f"{opt.output}/spindle", f"spindle_{i}.tif"), resized_spindle)
 #     io.imsave(os.path.join(f"{opt.output}/cell", f"cell_{i}.tif"), resized_cell)
