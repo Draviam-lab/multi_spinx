@@ -74,11 +74,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_img",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_04_R3D.tif", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_10_R3D.tif", 
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
-        # the time-stamp starts from 0, 
+        # the time-stamp starts from 0,
+        # so if start from time frame t in the movie, then here should be (t - 1)
         "--time_stamp",
         type = int, 
         default = 0, 
@@ -123,7 +124,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nr_frames",
         type = int, 
-        default = 6, 
+        default = 49, 
         help = "define how many frames to track the movie" 
         )
 
@@ -312,7 +313,7 @@ def bounding_box_plot(img, bbox_list):
     plt.tight_layout()
     plt.show()  
 
-def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, channel):
+def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, channel, start_frame):
     """
     This function plots the bounding boxes on the maximisation projection 
     across all the z-slices for each time point. The overlay images will then 
@@ -344,14 +345,16 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
     for t in range(num_time_points):
         # maximisation projection across z-slices for the current time point 
         # on specified channel
-        max_projected_img = np.max(img_5d[t, :, :, :, channel], axis = 0)
+        # (t + start_frame) stand for the relative frame ID if not start from frame 0
+        max_projected_img = np.max(img_5d[t + start_frame, :, :, :, channel], axis = 0)
         
         # define the figure and plot the original image
         fig, ax = plt.subplots(figsize = (10, 10))
         ax.imshow(max_projected_img, cmap = 'gray')
         # ax.imshow(max_projected_img)
         
-        tracked_spindles_at_frame = [spindle for spindle in tracked_spindles if spindle.get('frame_number') == t]
+        # (t + start_frame) stand for the relative frame ID if not start from frame 0
+        tracked_spindles_at_frame = [spindle for spindle in tracked_spindles if spindle.get('frame_number') == (t + start_frame)]
         
         # plotting the bounding boxes for the current time point
         for i in range(len(tracked_spindles_at_frame)):
@@ -573,16 +576,20 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
 
         # add the spindles in the current frame to the list of all tracked spindles
         tracked_spindles.extend(current_frame_spindles)
+    
+    # debug print
+    print(f"frame {frame_number + 1} complete")
 
 # output the tracked_spindles in a csv file
-spindles_to_csv(f"{opt.output}/tracked_spindles_summary.csv", tracked_spindles)
+spindles_to_csv(f"{opt.output}/tracked_spindles_summary_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.csv", tracked_spindles)
 # output the overlay multi-stacked tiff file
 bounding_box_plot_5d(
     f"{opt.input_img}", 
-    f"{opt.output}/tracked_spindles_summary.tif", 
+    f"{opt.output}/tracked_spindles_summary_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.tif", 
     opt.nr_frames, 
     bbox_list_per_time, 
-    opt.spindle_channel
+    opt.spindle_channel,
+    opt.time_stamp
     )
 
 # TODO: rename the output images tiles (a combination of experiment name, time-stamp name etc ...)
