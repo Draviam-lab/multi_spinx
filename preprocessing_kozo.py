@@ -74,37 +74,28 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_img",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_10_R3D.tif", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/230831kk_c16_07_R3D_D3D.tif", 
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
-        # the time-stamp starts from 0,
-        # so if start from time frame t in the movie, then here should be (t - 1)
+        # the time-stamp starts from 0, 
         "--time_stamp",
         type = int, 
-        default = 0, 
+        default = 1, 
         help = "define the start frame to track spindles, frame ID starting from 0, default set to 0" 
         )
-    # parser.add_argument(
-    #     # the z-slice starts from 1, 
-    #     # so when coding, need to use (opt.z_slice-1) as the time-stamp reference
-    #     "--z_slice",
-    #     type = int, 
-    #     default = 3, 
-    #     help = "the selected z-slice reference, starting from 1" 
-    #     )
     parser.add_argument(
         # the spindle channel ID starts from 0
         "--spindle_channel",
         type = int, 
-        default = 0, 
+        default = 1, 
         help = "the spindle channel ID, starting from 0" 
         )
     parser.add_argument(
         # the brightfield/cell channel ID starts from 0
         "--cell_channel",
         type = int, 
-        default = 3, 
+        default = 0, 
         help = "the cell (or brightfield) channel ID, starting from 0" 
         )
     parser.add_argument(
@@ -124,7 +115,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nr_frames",
         type = int, 
-        default = 49, 
+        default = 11, 
         help = "define how many frames to track the movie" 
         )
 
@@ -174,8 +165,8 @@ def img_read(img_path, time_stamp, spindle_channel, cell_channel):
 
     # selecting specific time-stamp and channel, 
     # and then applying maximisation projection over all the z-slices
-    img_spindle = np.max(img[time_stamp, :, :, :, spindle_channel], axis = 0)
-    img_cell = np.max(img[time_stamp, :, :, :, cell_channel], axis = 0)
+    img_spindle = np.max(img[time_stamp, :, spindle_channel, :, :], axis = 0)
+    img_cell = np.max(img[time_stamp, :, cell_channel, :, :], axis = 0)
     
     # normalisation to the [0, 1] scale for img_spindle and img_cell
     img_spindle_norm = (img_spindle - img_spindle.min())/(img_spindle.max() - img_spindle.min())
@@ -349,7 +340,7 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
         # maximisation projection across z-slices for the current time point 
         # on specified channel
         # (t + start_frame) stand for the relative frame ID if not start from frame 0
-        max_projected_img = np.max(img_5d[t + start_frame, :, :, :, channel], axis = 0)
+        max_projected_img = np.max(img_5d[t + start_frame, :, channel, :, :], axis = 0)
         
         # define the figure and plot the original image
         fig, ax = plt.subplots(figsize = (10, 10))
@@ -579,7 +570,7 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
 
         # add the spindles in the current frame to the list of all tracked spindles
         tracked_spindles.extend(current_frame_spindles)
-    
+
     # debug print
     print(f"frame {frame_number + 1} complete")
 
@@ -592,6 +583,14 @@ bounding_box_plot_5d(
     opt.nr_frames, 
     bbox_list_per_time, 
     opt.spindle_channel,
+    opt.time_stamp
+    )
+bounding_box_plot_5d(
+    f"{opt.input_img}", 
+    f"{opt.output}/GFP_summary_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.tif", 
+    opt.nr_frames, 
+    bbox_list_per_time, 
+    opt.cell_channel,
     opt.time_stamp
     )
 
