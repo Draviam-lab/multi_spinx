@@ -488,6 +488,8 @@ tracked_spindles = []
 # create another list of list stands for the list of the bounding boxes list 
 # across time frame
 bbox_list_per_time = [] 
+# define the spindle ID
+next_spindle_id = 1
 # process each frame
 # frame_number here is not the absolute frame_number of the multi-stacked tiff
 # but the relative frame_number in the [start_time_stamp - 1, end_time_stamp) range.
@@ -533,7 +535,8 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
     # if this is the first frame, just store the spindles without tracking
     if frame_number == opt.time_stamp:
         for i, spindle in enumerate(current_frame_spindles):
-            spindle['tracked_spindle_number'] = i
+            spindle['tracked_spindle_number'] = next_spindle_id
+            next_spindle_id = next_spindle_id + 1
         tracked_spindles.extend(current_frame_spindles)
 
     else:
@@ -566,7 +569,11 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
                 continue
 
             # if none of these conditions are true, assign it the same tracked_spindle_number as the last frame
-            current_frame_spindle['tracked_spindle_number'] = last_frame_spindle['tracked_spindle_number']
+            if last_frame_spindle['tracked_spindle_number'] != None:
+                current_frame_spindle['tracked_spindle_number'] = last_frame_spindle['tracked_spindle_number']
+            else:
+                current_frame_spindle['tracked_spindle_number'] = next_spindle_id
+                next_spindle_id = next_spindle_id + 1
 
         # add the spindles in the current frame to the list of all tracked spindles
         tracked_spindles.extend(current_frame_spindles)
