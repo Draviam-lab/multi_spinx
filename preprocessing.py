@@ -74,7 +74,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_img",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_10_R3D.tif", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_01_R3D.tif", 
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
@@ -85,14 +85,6 @@ if __name__ == "__main__":
         default = 0, 
         help = "define the start frame to track spindles, frame ID starting from 0, default set to 0" 
         )
-    # parser.add_argument(
-    #     # the z-slice starts from 1, 
-    #     # so when coding, need to use (opt.z_slice-1) as the time-stamp reference
-    #     "--z_slice",
-    #     type = int, 
-    #     default = 3, 
-    #     help = "the selected z-slice reference, starting from 1" 
-    #     )
     parser.add_argument(
         # the spindle channel ID starts from 0
         "--spindle_channel",
@@ -124,7 +116,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nr_frames",
         type = int, 
-        default = 49, 
+        default = 20, 
         help = "define how many frames to track the movie" 
         )
 
@@ -496,7 +488,9 @@ def spindles_to_csv(output_path, tracked_spindles):
 tracked_spindles = []
 # create another list of list stands for the list of the bounding boxes list 
 # across time frame
-bbox_list_per_time = [] 
+bbox_list_per_time = []
+# define the spindle ID
+next_spindle_id = 1 
 # process each frame
 # frame_number here is not the absolute frame_number of the multi-stacked tiff
 # but the relative frame_number in the [start_time_stamp - 1, end_time_stamp) range.
@@ -542,10 +536,22 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
     # if this is the first frame, just store the spindles without tracking
     if frame_number == opt.time_stamp:
         for i, spindle in enumerate(current_frame_spindles):
-            spindle['tracked_spindle_number'] = i
+            spindle['tracked_spindle_number'] = next_spindle_id
+            next_spindle_id = next_spindle_id + 1
         tracked_spindles.extend(current_frame_spindles)
 
     else:
+
+        # latest_spindle_summary = {}
+        # for spindle in tracked_spindles:
+        #     spindle_number = spindle['tracked_spindle_number']
+        #     frame_number = spindle['frame_number']
+    
+        #     if spindle_number not in latest_spindle_summary or frame_number > latest_spindle_summary[spindle_number]['frame_number']:
+        #         latest_spindle_summary[spindle_number] = spindle
+    
+        
+        
         # compute the cost matrix as the Euclidean distance between centroids in the last frame and the current frame
         last_frame_spindles = [spindle for spindle in tracked_spindles if spindle['frame_number'] == frame_number - 1]
         last_frame_centroids = [spindle['centroid'] for spindle in last_frame_spindles]
@@ -575,7 +581,11 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
                 continue
 
             # if none of these conditions are true, assign it the same tracked_spindle_number as the last frame
-            current_frame_spindle['tracked_spindle_number'] = last_frame_spindle['tracked_spindle_number']
+            if last_frame_spindle['tracked_spindle_number'] != None:
+                current_frame_spindle['tracked_spindle_number'] = last_frame_spindle['tracked_spindle_number']
+            else:
+                current_frame_spindle['tracked_spindle_number'] = next_spindle_id
+                next_spindle_id = next_spindle_id + 1
 
         # add the spindles in the current frame to the list of all tracked spindles
         tracked_spindles.extend(current_frame_spindles)
