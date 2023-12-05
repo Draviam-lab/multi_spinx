@@ -74,7 +74,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_img",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_01_R3D.tif", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_10_R3D.tif", 
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nr_frames",
         type = int, 
-        default = 25, 
+        default = 49, 
         help = "define how many frames to track the movie" 
         )
 
