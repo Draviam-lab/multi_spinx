@@ -118,6 +118,14 @@ if __name__ == "__main__":
         default = 11, 
         help = "define how many frames to track the movie" 
         )
+    parser.add_argument(
+        "--auto_adjust",
+        type = str, 
+        default = "n", 
+        help = "Whether to apply the auto-adjust function for low-intensity spindles \
+            'y' for apply. Be careful! When set this to 'y', other low-intensity \
+            non-spindle objects might also be detected." 
+        )
 
     opt = parser.parse_args()
     print(opt)
@@ -173,6 +181,96 @@ def img_read(img_path, time_stamp, spindle_channel, cell_channel):
     img_cell_norm = (img_cell - img_cell.min())/(img_cell.max() - img_cell.min())
     
     return img_spindle_norm, img_cell_norm
+
+def auto_adjust(img_norm):
+    """
+    This function is a Python-rewriting of ImageJ's auto-threshold option
+    (Image > Adjust > Brightness/Contrast > 'Auto' button)
+    Based on https://github.com/imagej/ImageJ/blob/706f894269622a4be04053d1f7e1424094ecc735/ij/plugin/frame/ContrastAdjuster.java#L780
+    
+    The algorithm (function autoAdjust) is basically a contrast setting the max 
+    white value to the max of the image (and same for black for min), with some 
+    saturation : i.e., it's not the max(min) of the image which is actually used 
+    but a lower(higher) value to eliminate the thin "tails" of the histogram 
+    and get an output dynamic range which allows for good visualisation of most 
+    of the image's pixels (at the expense of a few saturated pixels). While some 
+    (or most) algorithms parametrize this saturation to eliminate a set percentage 
+    of pixels, ImageJ's algorithm selects the closest values to the max(min) 
+    values whose count are over a certain proportion of the total amount of pixels.
+    
+    Parameters
+    ----------
+    img_norm: ndarray (2D)
+        Data array stands for the the normalised (0-1 scale) spindle image.
+        
+    Returns
+    -------
+    imr: ndarray of bool (2D)
+        Data array stands for the the normalised (0-1 scale) spindle image after
+        the auto-adjust processing.
+    """
+    
+    im_min = np.min(img_norm)
+    im_max = np.max(img_norm)
+    
+    # histogram computation 
+    hist_min = im_min
+    hist_max = im_max
+    histogram = np.histogram(img_norm, bins = 256, range = (hist_min, hist_max))[0]
+    bin_size = (hist_max - hist_min) / 256
+
+    # compute output min and max bins 
+    h, w = img_norm.shape
+    pixel_count = h * w
+    # the following values are taken directly from the ImageJ file.
+    limit = pixel_count/10
+    const_auto_threshold = 5000
+    auto_threshold = 0
+
+    auto_threshold = const_auto_threshold if auto_threshold <= 10 else auto_threshold/2
+    threshold = int(pixel_count/auto_threshold)
+
+    # setting the output min bin
+    i = -1
+    found = False
+    # going through all bins of the histogram in increasing order until you reach one where the count if more than
+    # pixel_count/auto_threshold
+    while not found and i <= 255:
+        i += 1
+        count = histogram[i]
+        if count > limit:
+            count = 0
+        found = count > threshold
+    hmin = i
+    found = False
+
+    # setting the output max bin : same thing but starting from the highest bin.
+    i = 256
+    while not found and i > 0:
+        i -= 1
+        count = histogram[i]
+        if count > limit:
+            count = 0
+        found = count > threshold
+    hmax = i
+
+    # compute output min and max pixel values from output min and max bins 
+    if hmax >= hmin:
+        min_ = hist_min + hmin * bin_size
+        max_ = hist_min + hmax * bin_size
+        # bad case number one, just return the min and max of the histogram
+        if min_ == max_:
+            min_ = hist_min
+            max_ = hist_max
+    # bad case number two, same
+    else:
+        min_ = hist_min
+        max_ = hist_max
+
+    # apply the contrast 
+    imr = (img_norm-min_) / (max_-min_)
+    
+    return imr
 
 def spindle_segmentation(img):
     """
@@ -503,6 +601,10 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
         frame_number, 
         opt.spindle_channel, 
         opt.cell_channel)
+    
+    if opt.auto_adjust == "y":
+        img_spindle_norm = auto_adjust(img_spindle_norm)
+    
     # perform spindle segmentation and bounding box generation for the current frame
     seg_spindle, bbox_list, centroid_list, _ = spindle_segmentation(img_spindle_norm)
     
