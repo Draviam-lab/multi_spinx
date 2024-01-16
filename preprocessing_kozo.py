@@ -74,14 +74,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_img",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/230831kk_c16_07_R3D_D3D.tif", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/230823kk_c1b_07_R3D_D3D.tif", 
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
         # the time-stamp starts from 0, 
         "--time_stamp",
         type = int, 
-        default = 1, 
+        default = 0, 
         help = "define the start frame to track spindles, frame ID starting from 0, default set to 0" 
         )
     parser.add_argument(
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nr_frames",
         type = int, 
-        default = 11, 
+        default = 27, 
         help = "define how many frames to track the movie" 
         )
     parser.add_argument(
@@ -125,6 +125,18 @@ if __name__ == "__main__":
         help = "Whether to apply the auto-adjust function for low-intensity spindles \
             'y' for apply. Be careful! When set this to 'y', other low-intensity \
             non-spindle objects might also be detected." 
+        )
+    parser.add_argument(
+        "--lower_marker",
+        type = float, 
+        default = 0.15, 
+        help = "The lower marker for watershed segmentation, ranges from 0 to 1." 
+        )
+    parser.add_argument(
+        "--higher_marker",
+        type = float, 
+        default = 0.25, 
+        help = "The higher marker for watershed segmentation, ranges from 0 to 1." 
         )
 
     opt = parser.parse_args()
@@ -272,7 +284,7 @@ def auto_adjust(img_norm):
     
     return imr
 
-def spindle_segmentation(img):
+def spindle_segmentation(img, lower_marker, higher_marker):
     """
     This function segments the spindles using watershed method. The input of this
     function is a still image (in array of float64), and the outputs are the 
@@ -284,6 +296,12 @@ def spindle_segmentation(img):
     ----------
     img: ndarray (2D)
         Data array stands for the the normalised (0-1 scale) spindle image.
+        
+    lower_marker: float
+        The lower marker for watershed segmentation, ranges from 0 to 1.
+        
+    higher_marker: float
+        The higher marker for watershed segmentation, ranges from 0 to 1.
         
     Returns
     -------
@@ -311,8 +329,8 @@ def spindle_segmentation(img):
     # segmentation of the spindle(s) using the traditional watershed method
     # find the watershed markers of the background and the nuclei
     markers = np.zeros_like(img)
-    markers[img < 0.3] = 1
-    markers[img > 0.4] = 2
+    markers[img < lower_marker] = 1
+    markers[img > higher_marker] = 2
     # watershed segmentation of the spindles
     seg_spindle = watershed(img, markers)
     seg_spindle = binary_fill_holes(seg_spindle- 1)
@@ -606,7 +624,9 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
         img_spindle_norm = auto_adjust(img_spindle_norm)
     
     # perform spindle segmentation and bounding box generation for the current frame
-    seg_spindle, bbox_list, centroid_list, _ = spindle_segmentation(img_spindle_norm)
+    seg_spindle, bbox_list, centroid_list, _ = spindle_segmentation(
+        img_spindle_norm, opt.lower_marker, opt.higher_marker
+        )
     
     bbox_list_per_time.append(bbox_list)
     
