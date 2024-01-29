@@ -333,7 +333,7 @@ def spindle_segmentation(img, lower_marker, higher_marker):
     markers[img > higher_marker] = 2
     # watershed segmentation of the spindles
     seg_spindle = watershed(img, markers)
-    seg_spindle = binary_fill_holes(seg_spindle- 1)
+    seg_spindle = binary_fill_holes(seg_spindle - 1)
     # remove small objects with boolean input "seg"
     seg_spindle = remove_small_objects(seg_spindle, 900)
         
@@ -380,6 +380,71 @@ def spindle_segmentation(img, lower_marker, higher_marker):
     
     # define the function returns
     return seg_spindle, bbox_list, centroid_list, centroid_local_list
+
+def gfp_segmentation(img, lower_marker, higher_marker, small_area):
+    """
+    This function segments the GFP signals using watershed method. The input 
+    of this function is a still image (in array of float64), and the outputs are 
+    the segmented GFP signals (a bool/binary mask), and the centroid coordinators 
+    each GFP signal.
+    
+    Parameters
+    ----------
+    img: ndarray (2D)
+        Data array stands for the the normalised (0-1 scale) GFP-channel image.
+        
+    lower_marker: float
+        The lower marker for watershed segmentation, ranges from 0 to 1.
+        
+    higher_marker: float
+        The higher marker for watershed segmentation, ranges from 0 to 1.
+    small_area: int
+        The "small area" thresholds for non-GFP "noise". Area below this values 
+        will be masked out, usually 20 is enough to remove small noisy objects
+        (if not can change larger, very slightly). This value should not be 
+        large (i.e., more than 30 may not be acceptable) as a larger value 
+        threshold-out the GFP signals themselves.
+        
+    Returns
+    -------
+    seg_gfp: ndarray of bool (2D)
+        The binary segmentation map for GFP signals.
+        
+    centroid_list: list
+        The list of centroid (row, col) for each detected GFP signal.
+        
+    """
+    
+    from scipy.ndimage import binary_fill_holes, label
+    from skimage.segmentation import watershed
+    from skimage.morphology import remove_small_objects
+    from skimage.measure import regionprops
+    
+    # segmentation of the GFP signal(s) using the traditional watershed method
+    # find the watershed markers of the background and the GFP signals
+    markers = np.zeros_like(img)
+    markers[img < lower_marker] = 1
+    markers[img > higher_marker] = 2
+    # watershed segmentation of the GFPs
+    seg_gfp = watershed(img, markers)
+    seg_gfp = binary_fill_holes(seg_gfp - 1)
+    # remove small objects with boolean input "seg"
+    seg_gfp = remove_small_objects(seg_gfp, small_area) 
+        
+    # generate spindle instance map based on the conventional watershed segmentation
+    gfp_instance, nr_gfp = label(seg_gfp)
+    # spindle regions cropping using skimage.measure.regionprops
+    # refer to https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
+    gfp_regions = regionprops(gfp_instance)
+    
+    # traversal the centroid of each spindle
+    centroid_list= []
+    for i in range(0, len(gfp_regions)):
+        # centroidarray coordinate tuple (row, col)
+        centroid_list.append(gfp_regions[i].centroid)
+
+    # define the function returns
+    return seg_gfp, centroid_list
 
 def bounding_box_plot(img, bbox_list):
     """
@@ -590,7 +655,7 @@ def spindles_to_csv(output_path, tracked_spindles):
     # drop the bounding_box and centroid columns
     sorted_df = sorted_df.drop(columns = ['bounding_box', 'centroid'])
 
-    # write to cSV
+    # write to csv
     sorted_df.to_csv(
         output_path, 
         columns = ['tracked_spindle_number', 'frame_number', 'min_row', 'min_col', 'max_row', 'max_col', 'centroid_row', 'centroid_col'], 
@@ -603,14 +668,22 @@ def spindles_to_csv(output_path, tracked_spindles):
 # with an additional tracked_spindle_number field indicating the identity of 
 # the spindle across frames.
 tracked_spindles = []
+
 # create another list of list stands for the list of the bounding boxes list 
 # across time frame
 bbox_list_per_time = [] 
+
+# create another empty list stacked_gfp_masks before the loop to store the GFP
+# signal masks across time
+stacked_gfp_masks = [] 
+
 # define the spindle ID
 next_spindle_id = 1
+
 # process each frame
 # frame_number here is not the absolute frame_number of the multi-stacked tiff
 # but the relative frame_number in the [start_time_stamp - 1, end_time_stamp) range.
+
 for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):    
     # image read for the current frame,
     # the spindle and cell cortex channels are both normalised
@@ -754,6 +827,36 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
         # # add the spindles in the current frame to the list of all tracked spindles
         # tracked_spindles.extend(current_frame_spindles)
     
+    # re-generate an ROI for GFP signal tracking, where we set pixel values 
+    # to 0 outside all the spindle areas 
+    gfp_mask = np.zeros_like(img_cell_norm, dtype = int) # GFP mask initialisation
+    
+    for individual_spindle in current_frame_spindles:
+        a1 = int(individual_spindle["bounding_box"][0])
+        a2 = int(individual_spindle["bounding_box"][1])
+        a3 = int(individual_spindle["bounding_box"][2])
+        a4 = int(individual_spindle["bounding_box"][3])
+        
+        gfp_mask[a1: a3, a2: a4] = 1
+        
+    # apply the condition to original image based on the mask
+    # set the pixel in img_original to 0 where mask_array is 0
+    img_cell_masked = np.where(gfp_mask == 0, 0, img_cell_norm)
+    # below 1 line is for debug purpose, should be just commented out
+    # img_spindle_masked = np.where(gfp_mask == 0, 0, img_spindle_norm)
+    
+    # normalisation the masked GFP channel to [0, 1] scale before GFP detection
+    # img_cell_masked_norm = (img_cell_masked - img_cell_masked.min())/(img_cell_masked.max() - img_cell_masked.min())
+    
+    # GFP signal detection 
+    # TODO: currently, the centriod is set to "_", 
+    # should modify accordingly when working on "GFP Tracking" feature
+    # msk_gfp, _ = gfp_segmentation(img_cell_masked_norm, 0.15, 0.4, 20)
+    msk_gfp, _ = gfp_segmentation(img_cell_masked, 0.15, 0.2, 20)
+    
+    # plot the stacked (across time) GFP signals in binary mask
+    stacked_gfp_masks.append(msk_gfp)
+
     # debug print
     print(f"frame {frame_number + 1} complete")
 
@@ -775,6 +878,11 @@ bounding_box_plot_5d(
     bbox_list_per_time, 
     opt.cell_channel,
     opt.time_stamp
+    )
+# output the stacked (across time) GFP signal masks as a multi-stacked TIFF file
+io.imsave(
+    f"{opt.output}/GFP_masks_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.tif", 
+    np.array(stacked_gfp_masks)
     )
 
 # TODO: rename the output images tiles (a combination of experiment name, time-stamp name etc ...)
