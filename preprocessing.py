@@ -74,7 +74,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_img",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_05_R3D.tif", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_01_R3D.tif", 
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         # so if start from time frame t in the movie, then here should be (t - 1)
         "--time_stamp",
         type = int, 
-        default = 33, 
+        default = 0, 
         help = "define the start frame to track spindles, frame ID starting from 0, default set to 0" 
         )
     parser.add_argument(
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nr_frames",
         type = int, 
-        default = 16, 
+        default = 25, 
         help = "define how many frames to track the movie" 
         )
     parser.add_argument(
@@ -316,7 +316,7 @@ def spindle_segmentation(img):
     markers[img > 0.4] = 2
     # watershed segmentation of the spindles
     seg_spindle = watershed(img, markers)
-    seg_spindle = binary_fill_holes(seg_spindle- 1)
+    seg_spindle = binary_fill_holes(seg_spindle - 1)
     # remove small objects with boolean input "seg"
     seg_spindle = remove_small_objects(seg_spindle, 900)
         
@@ -573,7 +573,7 @@ def spindles_to_csv(output_path, tracked_spindles):
     # drop the bounding_box and centroid columns
     sorted_df = sorted_df.drop(columns = ['bounding_box', 'centroid'])
 
-    # write to cSV
+    # write to csv
     sorted_df.to_csv(
         output_path, 
         columns = ['tracked_spindle_number', 'frame_number', 'min_row', 'min_col', 'max_row', 'max_col', 'centroid_row', 'centroid_col'], 
