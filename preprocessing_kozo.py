@@ -398,6 +398,7 @@ def gfp_segmentation(img, lower_marker, higher_marker, small_area):
         
     higher_marker: float
         The higher marker for watershed segmentation, ranges from 0 to 1.
+        
     small_area: int
         The "small area" thresholds for non-GFP "noise". Area below this values 
         will be masked out, usually 20 is enough to remove small noisy objects
@@ -412,6 +413,14 @@ def gfp_segmentation(img, lower_marker, higher_marker, small_area):
         
     centroid_list: list
         The list of centroid (row, col) for each detected GFP signal.
+        
+    bbox_list: list
+        The list of bounding boxes (min_row, min_col, max_row, max_col) for 
+        each detected GFP signal.
+    
+    centroid_local_list: list
+        The list of local centroid (row, col) relating to bounding box for 
+        each detected GFP signal.
         
     """
     
@@ -437,14 +446,29 @@ def gfp_segmentation(img, lower_marker, higher_marker, small_area):
     # refer to https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
     gfp_regions = regionprops(gfp_instance)
     
-    # traversal the centroid of each spindle
+    # traversal the properties of each spindle
+    bbox_list = []
     centroid_list= []
+    centroid_local_list = []
     for i in range(0, len(gfp_regions)):
+        
+        # bounding box (min_row, min_col, max_row, max_col)
+        # pixels belonging to the bounding box are in the half-open interval 
+        # [min_row; max_row) and [min_col; max_col)
+        
+        # keep the bounding box rectangle (different with square of spindles)
+        minr, minc, maxr, maxc = gfp_regions[i].bbox # load original bounding box
+        
+        # append the new bounding box to the list, 
+        bbox_list.append((minr, minc, maxr, maxc))
         # centroidarray coordinate tuple (row, col)
         centroid_list.append(gfp_regions[i].centroid)
+        # centroid_local shows the centroid coordinate tuple (row, col), 
+        # which is relative to region bounding box
+        centroid_local_list.append(gfp_regions[i].centroid_local)
 
     # define the function returns
-    return seg_gfp, centroid_list
+    return seg_gfp, bbox_list, centroid_list, centroid_local_list
 
 def bounding_box_plot(img, bbox_list):
     """
@@ -569,6 +593,91 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
     
     # save the images as a multi-stacked TIFF file
     imsave(output_path, np.array(output_images))
+    
+def bounding_box_plot_5d_gfp(img_path, output_path, nr_frame, bbox_list_per_time, channel, start_frame):
+    """
+    This function plots the bounding boxes on the maximisation projection 
+    across all the z-slices for each time point. The overlay images will then 
+    stacked as a multi-stacked tiff file as the output.
+
+    Parameters
+    ----------
+    img_5d: ndarray
+        The 5D multi-stacked TIFF image with dimensions {TT, ZZ, XX, YY, CC}.
+        
+    bbox_list_per_time: list of list
+        A list containing bounding box lists for each time point.
+        
+    channel: int
+        The channel ID to visualise (i.e., brightfield or spindle channel).
+        
+    start_frame: int
+        The starting frame for tracking.
+    """
+    
+    import matplotlib.patches as mpatches
+    from skimage.io import imread, imsave
+
+    # the sample image (stacked-tiff) is at {TT, ZZ, XX, YY, CC} structure
+    img_5d = imread(img_path) # source image read
+    
+    # define number of frames to track 
+    num_time_points = nr_frame # nr_frame should be opt.nr_frames or img_5d.shape[0]
+    
+    output_images = [] # create an empty list output_images before the loop
+    
+    for t in range(num_time_points):
+        # maximisation projection across z-slices for the current time point 
+        # on specified channel
+        # (t + start_frame) stand for the relative frame ID if not start from frame 0
+        max_projected_img = np.max(img_5d[t + start_frame, :, channel, :, :], axis = 0)
+        
+        # define the figure and plot the original image
+        fig, ax = plt.subplots(figsize = (10, 10))
+        ax.imshow(max_projected_img, cmap = 'gray')
+        # ax.imshow(max_projected_img)
+        
+        # (t + start_frame) stand for the relative frame ID if not start from frame 0
+        tracked_gfps_at_frame = [gfp for gfp in tracked_gfps if gfp.get('frame_number') == (t + start_frame)]
+        
+        # plotting the bounding boxes for the current time point
+        for i in range(len(tracked_gfps_at_frame)):
+            # draw bounding box
+            minr, minc, maxr, maxc = tracked_gfps_at_frame[i]['bounding_box']
+            rect = mpatches.Rectangle(
+                (minc, minr), maxc - minc, maxr - minr, 
+                fill = False, edgecolor = 'red', linewidth = 2)
+            ax.add_patch(rect)
+            # draw text along with the bounding box to identify gfp_id
+            centroid_y, centroid_x = tracked_gfps_at_frame[i]['centroid']
+            gfp_id = tracked_gfps_at_frame[i]['tracked_gfp_number']
+            if gfp_id != None:
+                ax.text(
+                    minc + 5, minr + 25,
+                    # centroid_x, centroid_y, 
+                    str(gfp_id), 
+                    color = 'red', fontsize = 18
+                    )
+            elif gfp_id == None:
+                ax.text(
+                    minc + 5, minr + 25,
+                    # centroid_x, centroid_y, 
+                    "new",
+                    color = 'red', fontsize = 18
+                    )
+            
+        # capture the figure's image data without displaying it
+        ax.set_axis_off()
+        plt.tight_layout()
+        fig.canvas.draw()
+        data = np.array(fig.canvas.renderer.buffer_rgba())
+        output_images.append(data)
+        
+        plt.close(fig)
+        # plt.show()
+    
+    # save the images as a multi-stacked TIFF file
+    imsave(output_path, np.array(output_images))
 
 # # Note: the below lines are for functions img_read, spindle_segmentation 
 # # and bounding_box_plot testing
@@ -661,24 +770,82 @@ def spindles_to_csv(output_path, tracked_spindles):
         columns = ['tracked_spindle_number', 'frame_number', 'min_row', 'min_col', 'max_row', 'max_col', 'centroid_row', 'centroid_col'], 
         index = False
         )
+    
+def gfps_to_csv(output_path, tracked_gfps):
+    """
+    This function converts the tracked_gfps to a csv file. The tracked_gfps
+    should be a list of dictionary, and in the dictionary there are fields of
+    area (float), bounding_box (tuple), centroid (tuple), frame_number (int), 
+    gfp_number (int) and tracked_gfp_number (int).
+
+    Parameters
+    ----------
+    tracked_gfps : list (list of dictionary)
+        A list to store the tracked spindles across all frames, with an 
+        additional tracked_spindle_number field indicating the identity of 
+        the spindle across frames.
+        
+    output_path : str
+        The output path of the output csv file.
+
+    Returns
+    -------
+    This function will return and save a csv file containing tracked GFP signals
+    on selected path.
+    
+    """
+    
+    df = pd.DataFrame(tracked_gfps)
+
+    # sort the dataframe respectively for the tracked_gfp_number is or is not None
+    df_with_number = df[df['tracked_gfp_number'].notna()]
+    df_without_number = df[df['tracked_gfp_number'].isna()]
+
+    df_with_number = df_with_number.sort_values(by=['tracked_gfp_number', 'frame_number'])
+    df_without_number = df_without_number.sort_values(by=['frame_number', 'gfp_number'])
+
+    sorted_df = pd.concat([df_with_number, df_without_number])
+
+    # extract min_row, min_col, max_row, max_col from bounding_box
+    # extract centroid_row and centroid_col from centroid
+    sorted_df[['min_row', 'min_col', 'max_row', 'max_col']] = pd.DataFrame(
+        sorted_df['bounding_box'].tolist(), 
+        index = sorted_df.index
+        )
+    sorted_df[['centroid_row', 'centroid_col']] = pd.DataFrame(
+        sorted_df['centroid'].tolist(), 
+        index = sorted_df.index
+        )
+    # drop the bounding_box and centroid columns
+    sorted_df = sorted_df.drop(columns = ['bounding_box', 'centroid'])
+
+    # write to csv
+    sorted_df.to_csv(
+        output_path, 
+        columns = ['tracked_gfp_number', 'frame_number', 'min_row', 'min_col', 'max_row', 'max_col', 'centroid_row', 'centroid_col'], 
+        index = False
+        )
 
 ########## below code are the main flow for multi-spindle tracking ##########
     
-# list to store the tracked spindles across all frames,
+# list to store the tracked spindles and GFP signals across all frames,
 # with an additional tracked_spindle_number field indicating the identity of 
 # the spindle across frames.
 tracked_spindles = []
+tracked_gfps = []
 
 # create another list of list stands for the list of the bounding boxes list 
-# across time frame
+# across time frame, one list for spindles and one list for the GFP signals.
 bbox_list_per_time = [] 
+bbox_list_per_time_gfp = []
 
 # create another empty list stacked_gfp_masks before the loop to store the GFP
 # signal masks across time
 stacked_gfp_masks = [] 
 
-# define the spindle ID
+# define the spindle and GFP ID
 next_spindle_id = 1
+next_gfp_id = 1
 
 # process each frame
 # frame_number here is not the absolute frame_number of the multi-stacked tiff
@@ -700,7 +867,7 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
     seg_spindle, bbox_list, centroid_list, _ = spindle_segmentation(
         img_spindle_norm, opt.lower_marker, opt.higher_marker
         )
-    
+
     bbox_list_per_time.append(bbox_list)
     
     # list to store the spindles in the current frame
@@ -757,8 +924,6 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
         # define the centroids of spindles for the current frams
         current_frame_centroids = [spindle['centroid'] for spindle in current_frame_spindles]
         
-        ########## Strategy 1 ##########
-        # when use this strategy, the other strategy should be commented out
         # A computation between the all tracked spindles (summary) and the current
         # frame should be calculated
         cost_matrix = cdist(all_tracked_spindles_centroids, current_frame_centroids)
@@ -788,45 +953,8 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
                 
         # add the spindles in the current frame to the list of all tracked spindles
         tracked_spindles.extend(current_frame_spindles)
-        
-        ########## Strategy 2 ##########
-        # # when use this strategy, the other strategy should be commented out
-        # # Computed the cost matrix as the Euclidean distance between centroids 
-        # # in the last frame and the current frame 
-        # cost_matrix = cdist(last_frame_centroids, current_frame_centroids)
-        
-        # # use the Hungarian Algorithm to find the optimal assignment of spindles between frames
-        # row_ind, col_ind = linear_sum_assignment(cost_matrix)
-        
-        # # count the number of assignments to each spindle in the current frame
-        # assignment_counts = Counter(col_ind)
-
-        # # assign the spindles in the current frame to the spindles in the last frame
-        # for last_frame_index, current_frame_index in zip(row_ind, col_ind):
-        #     # Get the spindles
-        #     last_frame_spindle = last_frame_spindles[last_frame_index]
-        #     current_frame_spindle = current_frame_spindles[current_frame_index]
-
-        #     # check if the spindle has split, has disappeared, or is touching the image boundary
-        #     if current_frame_spindle['area'] == 0 or \
-        #         current_frame_spindle['bounding_box'][0] <= 0 or \
-        #         current_frame_spindle['bounding_box'][1] <= 0 or \
-        #         current_frame_spindle['bounding_box'][2] >= img_spindle_norm.shape[0] or \
-        #         current_frame_spindle['bounding_box'][3] >= img_spindle_norm.shape[1] or \
-        #         assignment_counts[current_frame_index] > 1:
-        #         # if any of these conditions are true, don't assign it a tracked_spindle_number
-        #         continue
-
-        #     # if none of these conditions are true, assign it the same tracked_spindle_number as the last frame
-        #     if last_frame_spindle['tracked_spindle_number'] != None:
-        #         current_frame_spindle['tracked_spindle_number'] = last_frame_spindle['tracked_spindle_number']
-        #     else:
-        #         current_frame_spindle['tracked_spindle_number'] = next_spindle_id
-        #         next_spindle_id = next_spindle_id + 1
-          
-        # # add the spindles in the current frame to the list of all tracked spindles
-        # tracked_spindles.extend(current_frame_spindles)
     
+    ########## below code is for GFP signal tracking ##########
     # re-generate an ROI for GFP signal tracking, where we set pixel values 
     # to 0 outside all the spindle areas 
     gfp_mask = np.zeros_like(img_cell_norm, dtype = int) # GFP mask initialisation
@@ -848,24 +976,108 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
     # normalisation the masked GFP channel to [0, 1] scale before GFP detection
     # img_cell_masked_norm = (img_cell_masked - img_cell_masked.min())/(img_cell_masked.max() - img_cell_masked.min())
     
-    # GFP signal detection 
-    # TODO: currently, the centriod is set to "_", 
-    # should modify accordingly when working on "GFP Tracking" feature
-    # msk_gfp, _ = gfp_segmentation(img_cell_masked_norm, 0.15, 0.4, 20)
-    msk_gfp, _ = gfp_segmentation(img_cell_masked, 0.15, 0.2, 20)
-    
+    # perform spindle segmentation and bounding box generation for the current frame
+    # seg_gfp, _ = gfp_segmentation(img_cell_masked_norm, 0.15, 0.4, 20)
+    seg_gfp, bbox_list_gfp, centroid_list_gfp, _ = gfp_segmentation(
+        img_cell_masked, 0.15, 0.2, 20
+        )    
     # plot the stacked (across time) GFP signals in binary mask
-    stacked_gfp_masks.append(msk_gfp)
+    stacked_gfp_masks.append(seg_gfp)
+    
+    bbox_list_per_time_gfp.append(bbox_list_gfp)
+    
+    # list to store the GFPs in the current frame
+    current_frame_gfp = []
+    
+    # traverse the properties of each GFP signals
+    for i in range(len(bbox_list_gfp)):
+        # extract the bounding box and centroid indormation of the GFP signals
+        minr_gfp = bbox_list_gfp[i][0]
+        minc_gfp = bbox_list_gfp[i][1]
+        maxr_gfp = bbox_list_gfp[i][2]
+        maxc_gfp = bbox_list_gfp[i][3]
+        centroid_row_gfp = centroid_list_gfp[i][0]
+        centroid_col_gfp = centroid_list_gfp[i][1]
+
+        # compute the area of the bounding box
+        area_gfp = (maxr_gfp - minr_gfp) * (maxc_gfp - minc_gfp)
+
+        # store the GFPs in the current frame list
+        current_frame_gfp.append({
+            'frame_number': frame_number,
+            'gfp_number': i,
+            'bounding_box': (minr_gfp, minc_gfp, maxr_gfp, maxc_gfp),
+            'centroid': (centroid_row_gfp, centroid_col_gfp),
+            'area': area_gfp,
+            'tracked_gfp_number': None,  # initialise tracked_gfp_number
+        })
+    
+    # if this is the first frame, just store the GFP signals without tracking
+    if frame_number == opt.time_stamp:
+        for i, gfp in enumerate(current_frame_gfp):
+            gfp['tracked_gfp_number'] = next_gfp_id
+            next_gfp_id = next_gfp_id + 1
+        tracked_gfps.extend(current_frame_gfp)
+
+    else:
+        # extract the tracked GFP signals at their latest appearance for all the GFPs
+        latest_gfp_summary = {}
+        for gfp in tracked_gfps:
+            tracked_id = gfp['tracked_gfp_number']
+            frame_id = gfp['frame_number']
+            if tracked_id == None:
+                continue
+            elif tracked_id not in latest_gfp_summary or frame_id > latest_gfp_summary[tracked_id]['frame_number']:
+                latest_gfp_summary[tracked_id] = gfp
+        all_tracked_gfp_summary = [value for key, value in latest_gfp_summary.items()]
+        all_tracked_gfp_centroids = [gfp['centroid'] for gfp in all_tracked_gfp_summary]
+        
+        # define the GFPs in the last frame
+        last_frame_gfps = [gfp for gfp in tracked_gfps if gfp['frame_number'] == frame_number - 1]
+        last_frame_centroids_gfp = [gfp['centroid'] for gfp in last_frame_gfps]
+        
+        # define the centroids of GFPs for the current frams
+        current_frame_centroids_gfp = [gfp['centroid'] for gfp in current_frame_gfp]
+        
+        # A computation between the all tracked GFPs (summary) and the current frame 
+        cost_matrix_gfp = cdist(all_tracked_gfp_centroids, current_frame_centroids_gfp)
+
+        # use the Hungarian Algorithm to find the optimal assignment of spindles between frames
+        row_ind_gfp, col_ind_gfp = linear_sum_assignment(cost_matrix_gfp)
+        
+        # Assuming the following structures:
+        # all_tracked_spindles_centroids: list of centroids (tuples) for all previously tracked spindles
+        # current_frame_centroids: list of centroids (tuples) for spindles in the current frame
+        # next_spindle_id: an integer tracking the next available spindle ID
+        
+        for i, j in zip(row_ind_gfp, col_ind_gfp):
+            if cost_matrix_gfp[i, j] < 80: # distance_threshold = 80
+                # GFP is considered the same; assign existing tracked_gfp_number
+                current_frame_gfp[j]['tracked_gfp_number'] = all_tracked_gfp_summary[i]['tracked_gfp_number']
+            else:
+                # Spindle is new; assign a new tracked_gfp_number
+                current_frame_gfp[j]['tracked_gfp_number'] = next_gfp_id
+                next_gfp_id += 1
+    
+        # Handle any completely new spindles not matched in the cost matrix
+        for gfp in current_frame_gfp:
+            if 'tracked_gfp_number' not in gfp or gfp['tracked_gfp_number'] is None:
+                gfp['tracked_gfp_number'] = next_gfp_id
+                next_gfp_id += 1
+                
+        # add the GFPs in the current frame to the list of all tracked GFPs
+        tracked_gfps.extend(current_frame_gfp)
 
     # debug print
     print(f"frame {frame_number + 1} complete")
 
-# output the tracked_spindles in a csv file
+# output the tracked_spindles and tracked_gfps in a csv file
 spindles_to_csv(f"{opt.output}/tracked_spindles_summary_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.csv", tracked_spindles)
-# output the overlay multi-stacked tiff file
+gfps_to_csv(f"{opt.output}/tracked_gfp_summary_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.csv", tracked_gfps)
+# output the overlay multi-stacked tiff file (spindle tracking)
 bounding_box_plot_5d(
     f"{opt.input_img}", 
-    f"{opt.output}/tracked_spindles_summary_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.tif", 
+    f"{opt.output}/tracked_spindles_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.tif", 
     opt.nr_frames, 
     bbox_list_per_time, 
     opt.spindle_channel,
@@ -873,9 +1085,18 @@ bounding_box_plot_5d(
     )
 bounding_box_plot_5d(
     f"{opt.input_img}", 
-    f"{opt.output}/GFP_summary_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.tif", 
+    f"{opt.output}/tracked_spindles_GFP_channel_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.tif", 
     opt.nr_frames, 
     bbox_list_per_time, 
+    opt.cell_channel,
+    opt.time_stamp
+    )
+# output the overlay multi-stacked tiff file (GFP signal tracking)
+bounding_box_plot_5d_gfp(
+    f"{opt.input_img}", 
+    f"{opt.output}/tracked_GFPs_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.tif", 
+    opt.nr_frames, 
+    bbox_list_per_time_gfp, 
     opt.cell_channel,
     opt.time_stamp
     )
