@@ -74,14 +74,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_img",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/230823kk_c1b_07_R3D_D3D.tif", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/230831kk_c16_08_R3D_D3D.tif", 
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
         # the time-stamp starts from 0, 
         "--time_stamp",
         type = int, 
-        default = 0, 
+        default = 2, 
         help = "define the start frame to track spindles, frame ID starting from 0, default set to 0" 
         )
     parser.add_argument(
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nr_frames",
         type = int, 
-        default = 27, 
+        default = 26, 
         help = "define how many frames to track the movie" 
         )
     parser.add_argument(
@@ -137,6 +137,32 @@ if __name__ == "__main__":
         type = float, 
         default = 0.25, 
         help = "The higher marker for watershed segmentation, ranges from 0 to 1." 
+        )
+    parser.add_argument(
+        "--lower_marker_GFP",
+        type = float, 
+        default = 0.15, 
+        help = "The lower marker for watershed segmentation for the GFP signals, \
+        ranges from 0 to 1." 
+        )
+    parser.add_argument(
+        "--higher_marker_GFP",
+        type = float, 
+        default = 0.28, 
+        help = "The higher marker for watershed segmentation for the GFP signals, \
+        ranges from 0 to 1." 
+        )
+    parser.add_argument(
+        "--GFP_min_area",
+        type = int, 
+        default = 20, 
+        help = "The min area of GFP signals in pixel, suggest to put 20." 
+        )
+    parser.add_argument(
+        "--GFP_max_area",
+        type = int, 
+        default = 300, 
+        help = "The max area of GFP signals in pixel, suggest to put a value less than 400." 
         )
 
     opt = parser.parse_args()
@@ -381,7 +407,7 @@ def spindle_segmentation(img, lower_marker, higher_marker):
     # define the function returns
     return seg_spindle, bbox_list, centroid_list, centroid_local_list
 
-def gfp_segmentation(img, lower_marker, higher_marker, small_area):
+def gfp_segmentation(img, lower_marker, higher_marker, small_area, large_area):
     """
     This function segments the GFP signals using watershed method. The input 
     of this function is a still image (in array of float64), and the outputs are 
@@ -437,8 +463,14 @@ def gfp_segmentation(img, lower_marker, higher_marker, small_area):
     # watershed segmentation of the GFPs
     seg_gfp = watershed(img, markers)
     seg_gfp = binary_fill_holes(seg_gfp - 1)
+    
+    #remove small and large objects
+    small_removed = remove_small_objects(seg_gfp, small_area)
+    mid_removed = remove_small_objects(seg_gfp, large_area)
+    seg_gfp = small_removed ^ mid_removed
+    
     # remove small objects with boolean input "seg"
-    seg_gfp = remove_small_objects(seg_gfp, small_area) 
+    # seg_gfp = remove_small_objects(seg_gfp, small_area) 
         
     # generate spindle instance map based on the conventional watershed segmentation
     gfp_instance, nr_gfp = label(seg_gfp)
@@ -446,7 +478,7 @@ def gfp_segmentation(img, lower_marker, higher_marker, small_area):
     # refer to https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
     gfp_regions = regionprops(gfp_instance)
     
-    # traversal the properties of each spindle
+    # traversal the properties of each gfp signals
     bbox_list = []
     centroid_list= []
     centroid_local_list = []
@@ -465,7 +497,7 @@ def gfp_segmentation(img, lower_marker, higher_marker, small_area):
         centroid_list.append(gfp_regions[i].centroid)
         # centroid_local shows the centroid coordinate tuple (row, col), 
         # which is relative to region bounding box
-        centroid_local_list.append(gfp_regions[i].centroid_local)
+        centroid_local_list.append(gfp_regions[i].centroid_local)        
 
     # define the function returns
     return seg_gfp, bbox_list, centroid_list, centroid_local_list
@@ -977,9 +1009,19 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
     # img_cell_masked_norm = (img_cell_masked - img_cell_masked.min())/(img_cell_masked.max() - img_cell_masked.min())
     
     # perform spindle segmentation and bounding box generation for the current frame
-    # seg_gfp, _ = gfp_segmentation(img_cell_masked_norm, 0.15, 0.4, 20)
+    # seg_gfp, _ = gfp_segmentation(
+    #     img_cell_masked_norm, 
+    #     opt.lower_marker_GFP, 
+    #     opt.higher_marker_GFP, 
+    #     opt.GFP_min_area, 
+    #     opt.GFP_max_area
+    #     )
     seg_gfp, bbox_list_gfp, centroid_list_gfp, _ = gfp_segmentation(
-        img_cell_masked, 0.15, 0.2, 20
+        img_cell_masked, 
+        opt.lower_marker_GFP, 
+        opt.higher_marker_GFP, 
+        opt.GFP_min_area, 
+        opt.GFP_max_area
         )    
     # plot the stacked (across time) GFP signals in binary mask
     stacked_gfp_masks.append(seg_gfp)
