@@ -52,6 +52,7 @@ import time
 import argparse
 import warnings
 import os
+import re
 
 import pandas as pd
 import numpy as np
@@ -133,6 +134,12 @@ if __name__ == "__main__":
 
 # check whether output folder exist
 os.makedirs(f"{opt.output}", exist_ok = True)
+# extract the basename (i.e., filename with extension)
+filename_with_extension = os.path.basename(opt.input_img)
+# use regular expression to extract the desired part
+filename = re.match(r"^(.*?)\.[^.]*$", filename_with_extension).group(1) 
+# check subfolder for output
+os.makedirs(f"{opt.output}/{filename}", exist_ok = True)   
 
 def img_read(img_path, time_stamp, spindle_channel, cell_channel):
     """
@@ -488,43 +495,6 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
     # save the images as a multi-stacked TIFF file
     imsave(output_path, np.array(output_images))
 
-# # Note: the below lines are for functions img_read, spindle_segmentation 
-# # and bounding_box_plot testing
-# img_spindle_norm, img_cell_norm = img_read(
-#     f"{opt.input_img}", 
-#     opt.time_stamp, 
-#     opt.spindle_channel, 
-#     opt.cell_channel)
-# seg_spindle, bbox_list, centroid_list, centroid_local_list = spindle_segmentation(img_spindle_norm)
-# bounding_box_plot(img_spindle_norm, bbox_list)
-# bounding_box_plot(img_cell_norm, bbox_list)
-
-# # TODO: these to be put within the tracking code - these to be put as a function
-# # export cropped images (spindle channel and cell channel) based on bounding boxes
-# # create output directories for cropped images (spindles & cells respectively) 
-# # if they doesn't exist
-# os.makedirs(f"{opt.output}/spindle", exist_ok = True)
-# os.makedirs(f"{opt.output}/cell", exist_ok = True)
-
-# for i, bbox in enumerate(bbox_list):
-#     minr, minc, maxr, maxc = map(int, bbox)
-#     # image operation on the normalised channels
-#     cropped_spindle = img_spindle_norm[minr:maxr, minc:maxc]
-#     cropped_cell = img_cell_norm[minr:maxr, minc:maxc]
-    
-#     # Resize the cropped images to the desired output size
-#     output_size = (450, 450) # Define the size of the output images
-#     resized_spindle = transform.resize(cropped_spindle, output_size)
-#     resized_cell = transform.resize(cropped_cell, output_size)
-# # TODO: the cropped images should be at the same scale for the same spindle (across time)
-# # even if the bounding boxes of the same spindle in different time frame is at
-# # different size.. One way to solve this is to fix the bounding box size for each
-# # of the spindle (eg. use the first bounding box at the first frame), and the 
-# # move the bounding box according with the centroid.
-#     # Save the cropped images as single-channel TIFF files
-#     io.imsave(os.path.join(f"{opt.output}/spindle", f"spindle_{i}.tif"), resized_spindle)
-#     io.imsave(os.path.join(f"{opt.output}/cell", f"cell_{i}.tif"), resized_cell)
-
 def spindles_to_csv(output_path, tracked_spindles):
     """
     This function converts the tracked_spindles to a csv file. The tracked_spindles 
@@ -572,6 +542,9 @@ def spindles_to_csv(output_path, tracked_spindles):
         )
     # drop the bounding_box and centroid columns
     sorted_df = sorted_df.drop(columns = ['bounding_box', 'centroid'])
+    
+    # fix the starting number of frame (fix from starting from 0 to starting from 1)
+    sorted_df['frame_number'] = sorted_df['frame_number'] + 1
 
     # write to csv
     sorted_df.to_csv(
@@ -739,18 +712,79 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
     print(f"frame {frame_number + 1} complete")
 
 # output the tracked_spindles in a csv file
-spindles_to_csv(f"{opt.output}/tracked_spindles_summary_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.csv", tracked_spindles)
+spindles_to_csv(
+    f"{opt.output}/{filename}/tracked_spindles_summary_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.csv", 
+    tracked_spindles
+    )
 # output the overlay multi-stacked tiff file
 bounding_box_plot_5d(
     f"{opt.input_img}", 
-    f"{opt.output}/tracked_spindles_summary_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.tif", 
+    f"{opt.output}/{filename}/tracked_spindles_summary_frame_{frame_number + 1 - opt.nr_frames + 1}_to_{frame_number + 1}.tif", 
     opt.nr_frames, 
     bbox_list_per_time, 
     opt.spindle_channel,
     opt.time_stamp
     )
 
-# TODO: rename the output images tiles (a combination of experiment name, time-stamp name etc ...)
+# output two folders containing the cropped spindles
+# one folder contains the original images, and the other folder contains the rescaled images
+# each of the folders will have two subfolders, containing the crops of spindles and cells
+# check if four sub-folders exist
+os.makedirs(f"{opt.output}/{filename}/cropped_images/spindle", exist_ok = True)
+os.makedirs(f"{opt.output}/{filename}/cropped_images/cell", exist_ok = True)
+os.makedirs(f"{opt.output}/{filename}/cropped_images_rescaled_to_450_450/spindle", exist_ok = True)
+os.makedirs(f"{opt.output}/{filename}/cropped_images_rescaled_to_450_450/cell", exist_ok = True)
+
+for spindle in tracked_spindles:
+    # extract tracked spindle information
+    minr, minc, maxr, maxc = spindle["bounding_box"]
+    # the starting value of frame_number in img_read() function is 1 
+    # where in tracked_spindles is from 0, so the second peremeter should +1
+    frame_id = spindle["frame_number"] + 1
+    spindle_id = spindle["tracked_spindle_number"]
+    
+    # extract frame
+    img_spindle_norm, img_cell_norm = img_read(
+        f"{opt.input_img}", 
+        frame_id, 
+        opt.spindle_channel, 
+        opt.cell_channel
+        )
+    
+    # image operation on the normalised channels
+    cropped_spindle = img_spindle_norm[int(minr): int(maxr), int(minc): int(maxc)]
+    cropped_cell = img_cell_norm[int(minr): int(maxr), int(minc): int(maxc)]
+    
+    # save the cropped images as single-channel .tiff files
+    io.imsave(
+        f"{opt.output}/{filename}/cropped_images/spindle/cropped_frame_{frame_id}_spindle_{spindle_id}.tif",
+        cropped_spindle
+        )
+    io.imsave(
+        f"{opt.output}/{filename}/cropped_images/cell/cropped_frame_{frame_id}_spindle_{spindle_id}.tif", 
+        cropped_cell
+        )
+    
+    # resize the cropped images to the desired output size
+    output_size = (450, 450) # define the size of the output images
+    resized_spindle = transform.resize(cropped_spindle, output_size)
+    resized_cell = transform.resize(cropped_cell, output_size)
+    
+    # TODO: the cropped images should be at the same scale for the same spindle (across time)
+    # even if the bounding boxes of the same spindle in different time frame is at
+    # different size.. One way to solve this is to fix the bounding box size for each
+    # of the spindle (eg. use the first bounding box at the first frame), and the 
+    # move the bounding box according with the centroid.
+
+    # save the cropped and rescaled images as single-channel .tiff files
+    io.imsave(
+        f"{opt.output}/{filename}/cropped_images_rescaled_to_450_450/spindle/cropped_rescaled_frame_{frame_id}_spindle_{spindle_id}.tif",
+        resized_spindle
+        )
+    io.imsave(
+        f"{opt.output}/{filename}/cropped_images_rescaled_to_450_450/cell/cropped_rescaled_frame_{frame_id}_spindle_{spindle_id}.tif", 
+        resized_cell
+        )
 
 # debug print    
 time_elapsed = time.time() - since
