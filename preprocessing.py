@@ -22,6 +22,9 @@ input_img: str
 time_stamp: int
     Define the start frame to track spindles, frame ID starting from 0, default 
     set to 0.
+    
+nr_frames: int
+    Define how many frames to track the movie.
 
 spindle_channel: int
     The spindle channel ID, starting from 0.
@@ -36,16 +39,39 @@ padding: int
 output: str
     Define the output folder path.
 
-nr_frames: int
-    Define how many frames to track the movie.
+auto_adjust: str 
+    Define whether to apply the auto-adjust function for low-intensity spindles 
+    'y' for apply. Be careful! When set this to 'y', other low-intensity
+    non-spindle objects/structures might also be detected.
     
-# TODO: TBC
+lower_marker: float
+    The lower marker for watershed segmentation, ranges from 0 to 1.
+    
+higher_marker: float
+    The higher marker for watershed segmentation, ranges from 0 to 1.
+    
+cropped: str
+    Define whether export the cropped tracked-spindle images, 'y' for 'yes' and 
+    all others for 'no'.
     
 Returns
 -------
-In the output folders, there is a csv file showing the tracked spindles across
-the time.
-# TODO: TBC
+cropped_images (folder): 
+    contains two subfolders, storing the cropped spindles and cells respectively.
+    
+cropped_images_rescaled_to_450_450 (folder): 
+    contains two subfolders, storing the cropped spindle and cells respectively 
+    with them rescale to 450*450.
+    
+tracked_spindles_summary_frame_X_to_Y.csv:  
+    this spreadsheet shows the summary for all tracked spindles from the tracked 
+    frame X to frame Y.
+    
+tracked_spindles_summary_frame_X_to_Y.tif: 
+    this is a multi-stacked tiff overlay result showing spindle tracking from 
+    frame X to frame Y, spindles are highlighted with bounding boxes and are 
+    labelled with a unique number as the identifier. This file can be opened 
+    with ImageJ/Fiji.
 
 """
 
@@ -77,7 +103,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_img",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_01_R3D.tif", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_10_R3D.tif", 
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
@@ -87,6 +113,12 @@ if __name__ == "__main__":
         type = int, 
         default = 0, 
         help = "define the start frame to track spindles, frame ID starting from 0, default set to 0" 
+        )
+    parser.add_argument(
+        "--nr_frames",
+        type = int, 
+        default = 49, 
+        help = "define how many frames to track the movie" 
         )
     parser.add_argument(
         # the spindle channel ID starts from 0
@@ -113,14 +145,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/output", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/output/results", 
         help = "define the output folder path" 
-        )
-    parser.add_argument(
-        "--nr_frames",
-        type = int, 
-        default = 25, 
-        help = "define how many frames to track the movie" 
         )
     parser.add_argument(
         "--auto_adjust",
