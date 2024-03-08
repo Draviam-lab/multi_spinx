@@ -232,7 +232,7 @@ def img_read(img_path, time_stamp, spindle_channel, cell_channel):
     img_spindle_norm = (img_spindle - img_spindle.min())/(img_spindle.max() - img_spindle.min())
     img_cell_norm = (img_cell - img_cell.min())/(img_cell.max() - img_cell.min())
     
-    return img_spindle_norm, img_cell_norm
+    return img_spindle_norm.astype(np.float16), img_cell_norm.astype(np.float16)
 
 def auto_adjust(img_norm):
     """
