@@ -77,7 +77,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_img",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_EB3-mKate2_set16_SiR-DNA_1_5_R3D.tif", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_01_R3D.tif", 
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
@@ -99,7 +99,7 @@ if __name__ == "__main__":
         # the brightfield/cell channel ID starts from 0
         "--cell_channel",
         type = int, 
-        default = 2, 
+        default = 3, 
         help = "the cell (or brightfield) channel ID, starting from 0" 
         )
     parser.add_argument(
@@ -133,7 +133,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cropped",
         type = str, 
-        default = "n", 
+        default = "y", 
         help = "Whether export the cropped tracked-spindle images, 'y' for 'yes' all others for 'no'" 
         )
 
@@ -196,7 +196,7 @@ def img_read(img_path, time_stamp, spindle_channel, cell_channel):
     img_spindle_norm = (img_spindle - img_spindle.min())/(img_spindle.max() - img_spindle.min())
     img_cell_norm = (img_cell - img_cell.min())/(img_cell.max() - img_cell.min())
     
-    return img_spindle_norm, img_cell_norm
+    return img_spindle_norm.astype(np.float16), img_cell_norm.astype(np.float16)
 
 def auto_adjust(img_norm):
     """
@@ -327,8 +327,8 @@ def spindle_segmentation(img):
     # segmentation of the spindle(s) using the traditional watershed method
     # find the watershed markers of the background and the nuclei
     markers = np.zeros_like(img)
-    markers[img < 0.15] = 1
-    markers[img > 0.25] = 2
+    markers[img < 0.3] = 1
+    markers[img > 0.4] = 2
     # watershed segmentation of the spindles
     seg_spindle = watershed(img, markers)
     seg_spindle = binary_fill_holes(seg_spindle - 1)
@@ -456,8 +456,15 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
         # (t + start_frame) stand for the relative frame ID if not start from frame 0
         max_projected_img = np.max(img_5d[t + start_frame, :, :, :, channel], axis = 0)
         
+        # define new figure size
+        # desired figure size in pixels
+        width_px, height_px = np.shape(max_projected_img)
+        dpi = 100  # set DPI
+        width_in = width_px / dpi
+        height_in = height_px / dpi
+        
         # define the figure and plot the original image
-        fig, ax = plt.subplots(figsize = (10, 10))
+        fig, ax = plt.subplots(figsize = (width_in, height_in), dpi = dpi)
         ax.imshow(max_projected_img, cmap = 'gray')
         # ax.imshow(max_projected_img)
         
@@ -492,7 +499,7 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
             
         # capture the figure's image data without displaying it
         ax.set_axis_off()
-        plt.tight_layout()
+        plt.subplots_adjust(left = 0, right = 1, bottom = 0, top = 1, wspace = 0, hspace = 0)
         fig.canvas.draw()
         data = np.array(fig.canvas.renderer.buffer_rgba())
         output_images.append(data)
