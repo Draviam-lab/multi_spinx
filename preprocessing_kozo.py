@@ -92,11 +92,11 @@ if __name__ == "__main__":
         help = "the spindle channel ID, starting from 0" 
         )
     parser.add_argument(
-        # the brightfield/cell channel ID starts from 0
+        # the GFP channel ID starts from 0
         "--cell_channel",
         type = int, 
         default = 0, 
-        help = "the cell (or brightfield) channel ID, starting from 0" 
+        help = "the GFP channel ID, starting from 0" 
         )
     parser.add_argument(
         # the bounding box padding
@@ -163,6 +163,12 @@ if __name__ == "__main__":
         type = int, 
         default = 300, 
         help = "The max area of GFP signals in pixel, suggest to put a value less than 400." 
+        )
+    parser.add_argument(
+        "--cropped",
+        type = str, 
+        default = "n", 
+        help = "Whether export the cropped tracked-spindle images, 'y' for 'yes' all others for 'no'" 
         )
 
     opt = parser.parse_args()
@@ -585,8 +591,15 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
         # (t + start_frame) stand for the relative frame ID if not start from frame 0
         max_projected_img = np.max(img_5d[t + start_frame, :, channel, :, :], axis = 0)
         
+        # define new figure size
+        # Desired figure size in pixels
+        width_px, height_px = np.shape(max_projected_img)
+        dpi = 100  # set DPI
+        width_in = width_px / dpi
+        height_in = height_px / dpi
+        
         # define the figure and plot the original image
-        fig, ax = plt.subplots(figsize = (10, 10))
+        fig, ax = plt.subplots(figsize = (width_in, height_in), dpi = dpi)
         ax.imshow(max_projected_img, cmap = 'gray')
         # ax.imshow(max_projected_img)
         
@@ -621,7 +634,7 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
             
         # capture the figure's image data without displaying it
         ax.set_axis_off()
-        plt.tight_layout()
+        plt.subplots_adjust(left = 0, right = 1, bottom = 0, top = 1, wspace = 0, hspace = 0)
         fig.canvas.draw()
         data = np.array(fig.canvas.renderer.buffer_rgba())
         output_images.append(data)
@@ -670,8 +683,15 @@ def bounding_box_plot_5d_gfp(img_path, output_path, nr_frame, bbox_list_per_time
         # (t + start_frame) stand for the relative frame ID if not start from frame 0
         max_projected_img = np.max(img_5d[t + start_frame, :, channel, :, :], axis = 0)
         
+        # define new figure size
+        # Desired figure size in pixels
+        width_px, height_px = np.shape(max_projected_img)
+        dpi = 100  # set DPI
+        width_in = width_px / dpi
+        height_in = height_px / dpi
+        
         # define the figure and plot the original image
-        fig, ax = plt.subplots(figsize = (10, 10))
+        fig, ax = plt.subplots(figsize = (width_in, height_in), dpi = dpi)
         ax.imshow(max_projected_img, cmap = 'gray')
         # ax.imshow(max_projected_img)
         
@@ -706,7 +726,7 @@ def bounding_box_plot_5d_gfp(img_path, output_path, nr_frame, bbox_list_per_time
             
         # capture the figure's image data without displaying it
         ax.set_axis_off()
-        plt.tight_layout()
+        plt.subplots_adjust(left = 0, right = 1, bottom = 0, top = 1, wspace = 0, hspace = 0)
         fig.canvas.draw()
         data = np.array(fig.canvas.renderer.buffer_rgba())
         output_images.append(data)
@@ -1129,52 +1149,53 @@ io.imsave(
     np.array(stacked_gfp_masks)
     )
 
-# output two folders containing the cropped spindles
-# one folder contains the original images, and the other folder contains the rescaled images
-# check if four sub-folders exist
-os.makedirs(f"{opt.output}/{filename}/cropped_images/spindle", exist_ok = True)
-os.makedirs(f"{opt.output}/{filename}/cropped_images_rescaled_to_450_450/spindle", exist_ok = True)
-
-for spindle in tracked_spindles:
-    # extract tracked spindle information
-    minr, minc, maxr, maxc = spindle["bounding_box"]
-    # the starting value of frame_number in img_read() function is 1 
-    # where in tracked_spindles is from 0, so the second peremeter should +1
-    frame_id = spindle["frame_number"] + 1
-    spindle_id = spindle["tracked_spindle_number"]
+if opt.cropped == "y":
+    # output two folders containing the cropped spindles
+    # one folder contains the original images, and the other folder contains the rescaled images
+    # check if four sub-folders exist
+    os.makedirs(f"{opt.output}/{filename}/cropped_images/spindle", exist_ok = True)
+    os.makedirs(f"{opt.output}/{filename}/cropped_images_rescaled_to_450_450/spindle", exist_ok = True)
     
-    # extract frame
-    img_spindle_norm, img_cell_norm = img_read(
-        f"{opt.input_img}", 
-        frame_id, 
-        opt.spindle_channel, 
-        opt.cell_channel
-        )
+    for spindle in tracked_spindles:
+        # extract tracked spindle information
+        minr, minc, maxr, maxc = spindle["bounding_box"]
+        # the starting value of frame_number in img_read() function is 1 
+        # where in tracked_spindles is from 0, so the second peremeter should +1
+        frame_id = spindle["frame_number"] + 1
+        spindle_id = spindle["tracked_spindle_number"]
+        
+        # extract frame
+        img_spindle_norm, img_cell_norm = img_read(
+            f"{opt.input_img}", 
+            frame_id, 
+            opt.spindle_channel, 
+            opt.cell_channel
+            )
+        
+        # image operation on the normalised channels
+        cropped_spindle = img_spindle_norm[int(minr): int(maxr), int(minc): int(maxc)]
+        
+        # save the cropped images as single-channel .tiff files
+        io.imsave(
+            f"{opt.output}/{filename}/cropped_images/spindle/cropped_frame_{frame_id}_spindle_{spindle_id}.tif",
+            cropped_spindle
+            )
+        
+        # resize the cropped images to the desired output size
+        output_size = (450, 450) # define the size of the output images
+        resized_spindle = transform.resize(cropped_spindle, output_size)
+        
+        # TODO: the cropped images should be at the same scale for the same spindle (across time)
+        # even if the bounding boxes of the same spindle in different time frame is at
+        # different size.. One way to solve this is to fix the bounding box size for each
+        # of the spindle (eg. use the first bounding box at the first frame), and the 
+        # move the bounding box according with the centroid.
     
-    # image operation on the normalised channels
-    cropped_spindle = img_spindle_norm[int(minr): int(maxr), int(minc): int(maxc)]
-    
-    # save the cropped images as single-channel .tiff files
-    io.imsave(
-        f"{opt.output}/{filename}/cropped_images/spindle/cropped_frame_{frame_id}_spindle_{spindle_id}.tif",
-        cropped_spindle
-        )
-    
-    # resize the cropped images to the desired output size
-    output_size = (450, 450) # define the size of the output images
-    resized_spindle = transform.resize(cropped_spindle, output_size)
-    
-    # TODO: the cropped images should be at the same scale for the same spindle (across time)
-    # even if the bounding boxes of the same spindle in different time frame is at
-    # different size.. One way to solve this is to fix the bounding box size for each
-    # of the spindle (eg. use the first bounding box at the first frame), and the 
-    # move the bounding box according with the centroid.
-
-    # save the cropped and rescaled images as single-channel .tiff files
-    io.imsave(
-        f"{opt.output}/{filename}/cropped_images_rescaled_to_450_450/spindle/cropped_rescaled_frame_{frame_id}_spindle_{spindle_id}.tif",
-        resized_spindle
-        )
+        # save the cropped and rescaled images as single-channel .tiff files
+        io.imsave(
+            f"{opt.output}/{filename}/cropped_images_rescaled_to_450_450/spindle/cropped_rescaled_frame_{frame_id}_spindle_{spindle_id}.tif",
+            resized_spindle
+            )
 
 # debug print    
 time_elapsed = time.time() - since
