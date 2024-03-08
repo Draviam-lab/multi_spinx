@@ -75,7 +75,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_img",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_pi-EB1-GFP_EB3-mKate2_SiR-DNA_set21_DMSO-1-5_CilioDi-5uM-6-10_1_01_R3D.tif", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/exp2022_H1299_EB3-mKate2_set16_SiR-DNA_1_5_R3D.tif", 
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         # the brightfield/cell channel ID starts from 0
         "--cell_channel",
         type = int, 
-        default = 3, 
+        default = 2, 
         help = "the cell (or brightfield) channel ID, starting from 0" 
         )
     parser.add_argument(
@@ -319,8 +319,8 @@ def spindle_segmentation(img):
     # segmentation of the spindle(s) using the traditional watershed method
     # find the watershed markers of the background and the nuclei
     markers = np.zeros_like(img)
-    markers[img < 0.3] = 1
-    markers[img > 0.4] = 2
+    markers[img < 0.15] = 1
+    markers[img > 0.25] = 2
     # watershed segmentation of the spindles
     seg_spindle = watershed(img, markers)
     seg_spindle = binary_fill_holes(seg_spindle - 1)
