@@ -594,7 +594,7 @@ def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, ch
         max_projected_img = np.max(img_5d[t + start_frame, :, channel, :, :], axis = 0)
         
         # define new figure size
-        # Desired figure size in pixels
+        # desired figure size in pixels
         width_px, height_px = np.shape(max_projected_img)
         dpi = 100  # set DPI
         width_in = width_px / dpi
