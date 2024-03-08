@@ -746,7 +746,7 @@ for spindle in tracked_spindles:
     # extract frame
     img_spindle_norm, img_cell_norm = img_read(
         f"{opt.input_img}", 
-        frame_id, 
+        spindle["frame_number"], 
         opt.spindle_channel, 
         opt.cell_channel
         )
