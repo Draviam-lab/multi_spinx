@@ -22,6 +22,9 @@ input_img: str
 time_stamp: int
     Define the start frame to track spindles, frame ID starting from 0, default 
     set to 0.
+    
+nr_frames: int
+    Define how many frames to track the movie.
 
 spindle_channel: int
     The spindle channel ID, starting from 0.
@@ -36,16 +39,72 @@ padding: int
 output: str
     Define the output folder path.
 
-nr_frames: int
-    Define how many frames to track the movie.
+auto_adjust: str 
+    Define whether to apply the auto-adjust function for low-intensity spindles 
+    'y' for apply. Be careful! When set this to 'y', other low-intensity 
+    non-spindle objects might also be detected.
     
-# TODO: TBC
+lower_marker: float
+    The lower marker for watershed segmentation, ranges from 0 to 1.
+    
+higher_marker: float
+    The higher marker for watershed segmentation, ranges from 0 to 1.
+    
+lower_marker_GFP: float
+    The lower marker for watershed segmentation for the GFP signals, ranges 
+    from 0 to 1." 
+
+higher_marker_GFP: float
+    The higher marker for watershed segmentation for the GFP signals, ranges 
+    from 0 to 1.
+
+GFP_min_area: int
+    The min area of GFP signals in pixel, suggest to put 20.
+ 
+GFP_max_area: int
+    The max area of GFP signals in pixel, suggest to put a value less than 400.
+
+cropped: str
+    Define whether export the cropped tracked-spindle images, 'y' for 'yes' and 
+    all others for 'no'.
     
 Returns
 -------
-In the output folders, there is a csv file showing the tracked spindles across
-the time.
-# TODO: TBC
+cropped_images (folder): 
+    storing the cropped spindles.
+    
+cropped_images_rescaled_to_450_450 (folder): 
+    storing the cropped spindle with rescale to 450*450.
+    
+GFP_masks_frame_X_to_Y.tif: 
+    this is a multi-stacked tiff mask showing GFP signals segmentation from 
+    frame X to frame Y. This file can be opened with ImageJ/Fiji.
+    
+tracked_gfp_summary_frame_X_to_Y.csv: 
+    this spreadsheet shows the summary for all tracked GFP signals from the 
+    tracked frame X to frame Y.
+    
+tracked_GFPs_frame_X_to_Y.tif: 
+    this is a multi-stacked tiff overlay result showing GFP tracking from frame 
+    X to frame Y, GFP signals are highlighted with bounding boxes and are 
+    labelled with a unique number as the identifier. This file can be opened 
+    with ImageJ/Fiji.
+    
+tracked_spindles_frame_X_to_Y.tif: 
+    this is a multi-stacked tiff overlay result showing spindle tracking from 
+    frame X to frame Y, spindles are highlighted with bounding boxes and are 
+    labelled with a unique number as the identifier. This file can be opened 
+    with ImageJ/Fiji.
+    
+tracked_spindles_GFP_channel_frame_X_to_Y.tif: 
+    this is a multi-stacked tiff overlay result showing spindle bounding boxes 
+    on the GFP channel from frame X to frame Y, spindle bounding boxes and are 
+    labelled with a unique number as the identifier. This file can be opened 
+    with ImageJ/Fiji.
+    
+tracked_spindles_summary_frame_X_to_Y.csv:
+    this spreadsheet shows the summary for all tracked spindles from the tracked 
+    frame X to frame Y.
 
 """
 
@@ -87,6 +146,12 @@ if __name__ == "__main__":
         help = "define the start frame to track spindles, frame ID starting from 0, default set to 0" 
         )
     parser.add_argument(
+        "--nr_frames",
+        type = int, 
+        default = 26, 
+        help = "define how many frames to track the movie" 
+        )
+    parser.add_argument(
         # the spindle channel ID starts from 0
         "--spindle_channel",
         type = int, 
@@ -113,12 +178,6 @@ if __name__ == "__main__":
         type = str, 
         default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/output", 
         help = "define the output folder path" 
-        )
-    parser.add_argument(
-        "--nr_frames",
-        type = int, 
-        default = 26, 
-        help = "define how many frames to track the movie" 
         )
     parser.add_argument(
         "--auto_adjust",
