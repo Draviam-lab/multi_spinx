@@ -176,7 +176,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/output", 
+        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/output/results", 
         help = "define the output folder path" 
         )
     parser.add_argument(
@@ -228,7 +228,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cropped",
         type = str, 
-        default = "n", 
+        default = "y", 
         help = "Whether export the cropped tracked-spindle images, 'y' for 'yes' all others for 'no'" 
         )
 
