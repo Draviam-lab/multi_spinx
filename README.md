@@ -1,4 +1,4 @@
-# Multiple Spindles Tracking (Generalised from SpinX)
+# Multi-SpinX: An Advanced Framework for Automated Tracking of Mitotic Spindles and Kinetochores in Multicellular Environments
 This repository is designed for hosting scripts for multi-instance tracking to generalise the current SpinX modules. The scripts can be run in the command line.
 
 ## Multiple spindle tracking
