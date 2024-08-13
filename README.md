@@ -1,5 +1,5 @@
 # Multiple Spindles Tracking (Generalised from SpinX)
-This repository is designed for hosting scripts for multi-instance tracking to generalise the current SpinX modules.
+This repository is designed for hosting scripts for multi-instance tracking to generalise the current SpinX modules. <br/>
 
 The scripts can be run in the command line.
 
@@ -8,9 +8,6 @@ For multiple spindle tracking
 
 Running options:
 
-# arguments definition
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
     
     parser.add_argument(
         "--input_img",
