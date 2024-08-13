@@ -2,7 +2,8 @@
 This repository is designed for hosting scripts for multi-instance tracking to generalise the current SpinX modules. The scripts can be run in the command line.
 
 ## Multiple spindle tracking
-run```python3 multispindle_tracker.py``` <br/>
+run ```python3 multispindle_tracker.py``` <br/>
+This script tracks the movements of multi-spindles in a microscopy biology movie. Generally, the script outputs detected spindles and their underlying brightfield cells as cropped images to fit the existing SpinX modules. The cropped spindle images should be sent to SpinX-spindle module for spindle segmentation, and the cropped brightfield cell cortex images should be sent to the SpinX-cell-cortex module for cell cortex segmentation, and finally the outputs of SpinX-spindle and SpinX-cell-cortex should be sent to SpinX-modelling module for 3D modelling. <br/>
 
 Running options: <br/>
 --input_img: the input source image for nucleus counting (multi-stack tiff) <br/>
@@ -17,8 +18,9 @@ Running options: <br/>
 --higher_marker: The higher marker for watershed segmentation, ranges from 0 to 1. <br/>
 --cropped: Whether export the cropped tracked-spindle images, 'y' for 'yes' all others for 'no'. <br/>
 
-For kinetochore tracking
-```python3 kinetochore_tracker.py``` <br/>
+## kinetochore tracking
+run ```python3 kinetochore_tracker.py``` <br/>
+In addition to multi-spindle tracking, their kinetochores will also be tracked at the same time. <br/>
 
 Running options: <br/>
 --input_img: the input source image for nucleus counting (multi-stack tiff) <br/>
