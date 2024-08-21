@@ -38,3 +38,17 @@ Running options: <br/>
 --GFP_min_area: The min area of GFP signals in pixel, suggest to put 20. <br/>
 --GFP_max_area: The max area of GFP signals in pixel, suggest to put a value less than 400. <br/>
 --cropped: Whether export the cropped tracked-spindle images, 'y' for 'yes' all others for 'no' <br/>
+
+## Citation
+
+If you use this tool, please cite the following paper:
+
+```bibtex
+@article{chai2024multi,
+  title={Multi-SpinX: An Advanced Framework for Automated Tracking of Mitotic Spindles and Kinetochores in Multicellular Environments},
+  author={Chai, Binghao and Efstathiou, Christoforos and Choudhury, Muntaqa S and Kuniyasu, Kinue and Jain, Saakshi Sanjay and Maharea, Alexia-Cristina and Tanaka, Kozo and Draviam, Viji M},
+  journal={bioRxiv},
+  pages={2024--04},
+  year={2024},
+  publisher={Cold Spring Harbor Laboratory}
+}
