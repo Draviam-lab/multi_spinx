@@ -693,76 +693,80 @@ for frame_number in range(opt.time_stamp, opt.time_stamp + opt.nr_frames):
         # define the centroids of spindles for the current frams
         current_frame_centroids = [spindle['centroid'] for spindle in current_frame_spindles]
         
-        ########## Strategy 1 ##########
-        # when use this strategy, the other strategy should be commented out
-        # A computation between the all tracked spindles (summary) and the current
-        # frame should be calculated
-        cost_matrix = cdist(all_tracked_spindles_centroids, current_frame_centroids)
-
-        # use the Hungarian Algorithm to find the optimal assignment of spindles between frames
-        row_ind, col_ind = linear_sum_assignment(cost_matrix)
-        
-        # Assuming the following structures:
-        # all_tracked_spindles_centroids: list of centroids (tuples) for all previously tracked spindles
-        # current_frame_centroids: list of centroids (tuples) for spindles in the current frame
-        # next_spindle_id: an integer tracking the next available spindle ID
-        
-        for i, j in zip(row_ind, col_ind):
-            if cost_matrix[i, j] < 80: # distance_threshold = 80
-                # Spindle is considered the same; assign existing tracked_spindle_number
-                current_frame_spindles[j]['tracked_spindle_number'] = all_tracked_spindles_summary[i]['tracked_spindle_number']
-            else:
-                # Spindle is new; assign a new tracked_spindle_number
-                current_frame_spindles[j]['tracked_spindle_number'] = next_spindle_id
-                next_spindle_id += 1
+        try:
+            ########## Strategy 1 ##########
+            # when use this strategy, the other strategy should be commented out
+            # A computation between the all tracked spindles (summary) and the current
+            # frame should be calculated
+            cost_matrix = cdist(all_tracked_spindles_centroids, current_frame_centroids)
     
-        # Handle any completely new spindles not matched in the cost matrix
-        for spindle in current_frame_spindles:
-            if 'tracked_spindle_number' not in spindle or spindle['tracked_spindle_number'] is None:
-                spindle['tracked_spindle_number'] = next_spindle_id
-                next_spindle_id += 1
-                
-        # add the spindles in the current frame to the list of all tracked spindles
-        tracked_spindles.extend(current_frame_spindles)
+            # use the Hungarian Algorithm to find the optimal assignment of spindles between frames
+            row_ind, col_ind = linear_sum_assignment(cost_matrix)
+            
+            # Assuming the following structures:
+            # all_tracked_spindles_centroids: list of centroids (tuples) for all previously tracked spindles
+            # current_frame_centroids: list of centroids (tuples) for spindles in the current frame
+            # next_spindle_id: an integer tracking the next available spindle ID
+            
+            for i, j in zip(row_ind, col_ind):
+                if cost_matrix[i, j] < 80: # distance_threshold = 80
+                    # Spindle is considered the same; assign existing tracked_spindle_number
+                    current_frame_spindles[j]['tracked_spindle_number'] = all_tracked_spindles_summary[i]['tracked_spindle_number']
+                else:
+                    # Spindle is new; assign a new tracked_spindle_number
+                    current_frame_spindles[j]['tracked_spindle_number'] = next_spindle_id
+                    next_spindle_id += 1
         
-        ########## Strategy 2 ##########
-        # # when use this strategy, the other strategy should be commented out
-        # # Computed the cost matrix as the Euclidean distance between centroids 
-        # # in the last frame and the current frame 
-        # cost_matrix = cdist(last_frame_centroids, current_frame_centroids)
-        
-        # # use the Hungarian Algorithm to find the optimal assignment of spindles between frames
-        # row_ind, col_ind = linear_sum_assignment(cost_matrix)
-        
-        # # count the number of assignments to each spindle in the current frame
-        # assignment_counts = Counter(col_ind)
-
-        # # assign the spindles in the current frame to the spindles in the last frame
-        # for last_frame_index, current_frame_index in zip(row_ind, col_ind):
-        #     # Get the spindles
-        #     last_frame_spindle = last_frame_spindles[last_frame_index]
-        #     current_frame_spindle = current_frame_spindles[current_frame_index]
-
-        #     # check if the spindle has split, has disappeared, or is touching the image boundary
-        #     if current_frame_spindle['area'] == 0 or \
-        #         current_frame_spindle['bounding_box'][0] <= 0 or \
-        #         current_frame_spindle['bounding_box'][1] <= 0 or \
-        #         current_frame_spindle['bounding_box'][2] >= img_spindle_norm.shape[0] or \
-        #         current_frame_spindle['bounding_box'][3] >= img_spindle_norm.shape[1] or \
-        #         assignment_counts[current_frame_index] > 1:
-        #         # if any of these conditions are true, don't assign it a tracked_spindle_number
-        #         continue
-
-        #     # if none of these conditions are true, assign it the same tracked_spindle_number as the last frame
-        #     if last_frame_spindle['tracked_spindle_number'] != None:
-        #         current_frame_spindle['tracked_spindle_number'] = last_frame_spindle['tracked_spindle_number']
-        #     else:
-        #         current_frame_spindle['tracked_spindle_number'] = next_spindle_id
-        #         next_spindle_id = next_spindle_id + 1
-          
-        # # add the spindles in the current frame to the list of all tracked spindles
-        # tracked_spindles.extend(current_frame_spindles)
+            # Handle any completely new spindles not matched in the cost matrix
+            for spindle in current_frame_spindles:
+                if 'tracked_spindle_number' not in spindle or spindle['tracked_spindle_number'] is None:
+                    spindle['tracked_spindle_number'] = next_spindle_id
+                    next_spindle_id += 1
+                    
+            # add the spindles in the current frame to the list of all tracked spindles
+            tracked_spindles.extend(current_frame_spindles)
+            
+            ########## Strategy 2 ##########
+            # # when use this strategy, the other strategy should be commented out
+            # # Computed the cost matrix as the Euclidean distance between centroids 
+            # # in the last frame and the current frame 
+            # cost_matrix = cdist(last_frame_centroids, current_frame_centroids)
+            
+            # # use the Hungarian Algorithm to find the optimal assignment of spindles between frames
+            # row_ind, col_ind = linear_sum_assignment(cost_matrix)
+            
+            # # count the number of assignments to each spindle in the current frame
+            # assignment_counts = Counter(col_ind)
     
+            # # assign the spindles in the current frame to the spindles in the last frame
+            # for last_frame_index, current_frame_index in zip(row_ind, col_ind):
+            #     # Get the spindles
+            #     last_frame_spindle = last_frame_spindles[last_frame_index]
+            #     current_frame_spindle = current_frame_spindles[current_frame_index]
+    
+            #     # check if the spindle has split, has disappeared, or is touching the image boundary
+            #     if current_frame_spindle['area'] == 0 or \
+            #         current_frame_spindle['bounding_box'][0] <= 0 or \
+            #         current_frame_spindle['bounding_box'][1] <= 0 or \
+            #         current_frame_spindle['bounding_box'][2] >= img_spindle_norm.shape[0] or \
+            #         current_frame_spindle['bounding_box'][3] >= img_spindle_norm.shape[1] or \
+            #         assignment_counts[current_frame_index] > 1:
+            #         # if any of these conditions are true, don't assign it a tracked_spindle_number
+            #         continue
+    
+            #     # if none of these conditions are true, assign it the same tracked_spindle_number as the last frame
+            #     if last_frame_spindle['tracked_spindle_number'] != None:
+            #         current_frame_spindle['tracked_spindle_number'] = last_frame_spindle['tracked_spindle_number']
+            #     else:
+            #         current_frame_spindle['tracked_spindle_number'] = next_spindle_id
+            #         next_spindle_id = next_spindle_id + 1
+              
+            # # add the spindles in the current frame to the list of all tracked spindles
+            # tracked_spindles.extend(current_frame_spindles)
+    
+        except:
+            pass
+        
     # debug print
     print(f"frame {frame_number + 1} complete")
 
