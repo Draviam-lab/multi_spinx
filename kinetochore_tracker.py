@@ -135,7 +135,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_img",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/data/230831kk_c16_08_R3D_D3D.tif", 
         help = "the input source image for nucleus counting (multi-stack tiff)" 
         )
     parser.add_argument(
@@ -176,7 +175,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type = str, 
-        default = "F:/Dropbox/Postdoc_QMUL/workspace/multispindle/output/results", 
         help = "define the output folder path" 
         )
     parser.add_argument(
