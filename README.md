@@ -44,11 +44,12 @@ Running options: <br/>
 If you use this tool, please cite the following paper:
 
 ```bibtex
-@article{chai2024multi,
-  title={Multi-SpinX: An Advanced Framework for Automated Tracking of Mitotic Spindles and Kinetochores in Multicellular Environments},
+@article{chai2025multi,
+  title={Multi-SpinX: An advanced framework for automated tracking of mitotic spindles and kinetochores in multicellular environments},
   author={Chai, Binghao and Efstathiou, Christoforos and Choudhury, Muntaqa S and Kuniyasu, Kinue and Jain, Saakshi Sanjay and Maharea, Alexia-Cristina and Tanaka, Kozo and Draviam, Viji M},
-  journal={bioRxiv},
-  pages={2024--04},
-  year={2024},
-  publisher={Cold Spring Harbor Laboratory}
+  journal={Computers in Biology and Medicine},
+  volume={186},
+  pages={109626},
+  year={2025},
+  publisher={Elsevier}
 }
