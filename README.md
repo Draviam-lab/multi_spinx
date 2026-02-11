@@ -2,7 +2,7 @@
 
 Multi-SpinX provides command-line scripts for automated tracking of mitotic spindles and kinetochores (GFP) in microscopy movies.
 
-Author: Dr Binghao Chai  
+Author: Dr Binghao Chai (Prof Viji Draviam Lab)
 Institute: Queen Mary University of London
 
 ## Related publication
