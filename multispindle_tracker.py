@@ -1,78 +1,40 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Jun 23 12:24:57 2023
+CLI entrypoint for multi-spindle tracking on 5D microscopy TIFF movies.
 
-@author: binghao chai
+This script keeps the original command-line behavior and tracking flow, while
+delegating reusable image/segmentation/visualization/export logic to the
+`tracking_core` package.
 
-This script tracks the movements of multi spindles in a microscopy biology movie.
-Generally, the script outputs detected spindles and their underlying brightfield 
-cells as cropped images to fit the existing SpinX modules.
+Author: Dr Binghao Chai
+Institute: Queen Mary University of London
 
-The cropped spindle images should be sent to SpinX-spindle module for spindle 
-segmentation, and the cropped brightfield cell cortex images should be sent to 
-the SpinX-cell-cortex module for cell cortex segmentation, and finally the
-outputs of SpinX-spindle and SpinX-cell-cortex should be sent to SpinX-modelling
-module for 3D modelling.
+Main responsibilities:
+1. Parse CLI arguments and create output folders.
+2. Run frame-by-frame spindle detection and ID assignment.
+3. Export CSV summaries, overlay TIFF stacks, and optional crop datasets.
 
-Parameters
-----------
-input_img: str
-    The input source image for nucleus counting (multi-stack tiff).
+CLI usage (argparse):
+    python3 multispindle_tracker.py --help
+    python3 multispindle_tracker.py --input_img <movie.tif> --output <output_dir> [options]
 
-time_stamp: int
-    Define the start frame to track spindles, frame ID starting from 0, default 
-    set to 0.
-    
-nr_frames: int
-    Define how many frames to track the movie.
+CLI arguments:
+- --input_img: source multi-stack TIFF path.
+- --time_stamp: zero-based start frame (default: 0).
+- --nr_frames: number of frames to process (default: 49).
+- --spindle_channel: spindle channel index (default: 0).
+- --cell_channel: brightfield/cell channel index (default: 3).
+- --padding: bbox padding in pixels (default: 40).
+- --output: output directory path.
+- --auto_adjust: apply ImageJ-like auto-contrast, use 'y' to enable (default: 'n').
+- --lower_marker: watershed lower marker (default: 0.30).
+- --higher_marker: watershed higher marker (default: 0.40).
+- --cropped: export crops, use 'y' to enable (default: 'y').
 
-spindle_channel: int
-    The spindle channel ID, starting from 0.
-
-cell_channel: int
-    The cell (or brightfield) channel ID, starting from 0.
-
-padding: int
-    Define how many pixels to extend for each side of the bounding boxes to make 
-    them larger, default value set to 0.
-
-output: str
-    Define the output folder path.
-
-auto_adjust: str 
-    Define whether to apply the auto-adjust function for low-intensity spindles 
-    'y' for apply. Be careful! When set this to 'y', other low-intensity
-    non-spindle objects/structures might also be detected.
-    
-lower_marker: float
-    The lower marker for watershed segmentation, ranges from 0 to 1.
-    
-higher_marker: float
-    The higher marker for watershed segmentation, ranges from 0 to 1.
-    
-cropped: str
-    Define whether export the cropped tracked-spindle images, 'y' for 'yes' and 
-    all others for 'no'.
-    
-Returns
--------
-cropped_images (folder): 
-    contains two subfolders, storing the cropped spindles and cells respectively.
-    
-cropped_images_rescaled_to_450_450 (folder): 
-    contains two subfolders, storing the cropped spindle and cells respectively 
-    with them rescale to 450*450.
-    
-tracked_spindles_summary_frame_X_to_Y.csv:  
-    this spreadsheet shows the summary for all tracked spindles from the tracked 
-    frame X to frame Y.
-    
-tracked_spindles_summary_frame_X_to_Y.tif: 
-    this is a multi-stacked tiff overlay result showing spindle tracking from 
-    frame X to frame Y, spindles are highlighted with bounding boxes and are 
-    labelled with a unique number as the identifier. This file can be opened 
-    with ImageJ/Fiji.
-
+Notes:
+- `time_stamp` is zero-based.
+- This script expects channel-last indexing for the source image:
+  `{T, Z, X, Y, C}`.
 """
 
 # package import
@@ -92,6 +54,13 @@ from skimage import io
 from skimage import transform
 
 import matplotlib.pyplot as plt
+
+from tracking_core.exporters import spindles_to_csv as core_spindles_to_csv
+from tracking_core.image_ops import auto_adjust as core_auto_adjust
+from tracking_core.image_ops import read_projected_channels
+from tracking_core.segmentation import spindle_segmentation as core_spindle_segmentation
+from tracking_core.visualization import bounding_box_plot as core_bounding_box_plot
+from tracking_core.visualization import write_tracking_overlay_tiff
 
 warnings.filterwarnings("ignore") # ignore warnings
 since = time.time()
@@ -187,422 +156,68 @@ os.makedirs(f"{opt.output}/{filename}", exist_ok = True)
 
 def img_read(img_path, time_stamp, spindle_channel, cell_channel):
     """
-    This function operates on the multi-stacked tiff image (movie) at 
-    {TT, ZZ, XX, YY, CC} structure, where TT stands for time-stamp, ZZ stands 
-    for z-slice, XX and YY stand for the size at each frame, and CC stands for
-    channels. This function reads the specific image channels for a specific 
-    time frame and applies a maximisation projection across all z-slices. 
-    
-    Parameters
-    ----------
-    img_path: str
-        The input source image for nucleus counting (multi-stack tiff).
-        
-    time_stamp: int
-        Define the start frame to track spindles, frame ID starting from 1, 
-        default set to 1.
-        
-    spindle_channel: int
-        The spindle channel ID, starting from 0.
-        
-    cell_channel: int
-        The cell cortex (brightfield) channel ID, starting from 0.
+    Backward-compatible wrapper for shared 5D TIFF channel reading.
 
-    Returns
-    -------
-    img_spindle_norm: ndarray (2D)
-        Data array stands for the the normalised (0-1 scale) spindle image.
-    
-    img_cell_norm: ndarray (2D)
-        Data array stands for the the normalised (0-1 scale) cell cortex image.
-        
+    Delegates to `tracking_core.image_ops.read_projected_channels` with
+    channel-last indexing (`{T, Z, X, Y, C}`).
     """
+    return read_projected_channels(
+        img_path=img_path,
+        time_stamp=time_stamp,
+        spindle_channel=spindle_channel,
+        cell_channel=cell_channel,
+        channel_axis_last=True,
+    )
 
-    from skimage.io import imread
-
-    # the sample image (stacked-tiff) is at {TT, ZZ, XX, YY, CC} structure
-    img = imread(img_path) # source image read
-
-    # selecting specific time-stamp and channel, 
-    # and then applying maximisation projection over all the z-slices
-    img_spindle = np.max(img[time_stamp, :, :, :, spindle_channel], axis = 0)
-    img_cell = np.max(img[time_stamp, :, :, :, cell_channel], axis = 0)
-    
-    # normalisation to the [0, 1] scale for img_spindle and img_cell
-    img_spindle_norm = (img_spindle - img_spindle.min())/(img_spindle.max() - img_spindle.min())
-    img_cell_norm = (img_cell - img_cell.min())/(img_cell.max() - img_cell.min())
-    
-    return img_spindle_norm.astype(np.float16), img_cell_norm.astype(np.float16)
 
 def auto_adjust(img_norm):
-    """
-    This function is a Python-rewriting of ImageJ's auto-threshold option
-    (Image > Adjust > Brightness/Contrast > 'Auto' button)
-    Based on https://github.com/imagej/ImageJ/blob/706f894269622a4be04053d1f7e1424094ecc735/ij/plugin/frame/ContrastAdjuster.java#L780
-    
-    The algorithm (function autoAdjust) is basically a contrast setting the max 
-    white value to the max of the image (and same for black for min), with some 
-    saturation : i.e., it's not the max(min) of the image which is actually used 
-    but a lower(higher) value to eliminate the thin "tails" of the histogram 
-    and get an output dynamic range which allows for good visualisation of most 
-    of the image's pixels (at the expense of a few saturated pixels). While some 
-    (or most) algorithms parametrize this saturation to eliminate a set percentage 
-    of pixels, ImageJ's algorithm selects the closest values to the max(min) 
-    values whose count are over a certain proportion of the total amount of pixels.
-    
-    Parameters
-    ----------
-    img_norm: ndarray (2D)
-        Data array stands for the the normalised (0-1 scale) spindle image.
-        
-    Returns
-    -------
-    imr: ndarray of bool (2D)
-        Data array stands for the the normalised (0-1 scale) spindle image after
-        the auto-adjust processing.
-    """
-    
-    im_min = np.min(img_norm)
-    im_max = np.max(img_norm)
-    
-    # histogram computation 
-    hist_min = im_min
-    hist_max = im_max
-    histogram = np.histogram(img_norm, bins = 256, range = (hist_min, hist_max))[0]
-    bin_size = (hist_max - hist_min) / 256
+    """Backward-compatible wrapper for ImageJ-style auto contrast."""
+    return core_auto_adjust(img_norm)
 
-    # compute output min and max bins 
-    h, w = img_norm.shape
-    pixel_count = h * w
-    # the following values are taken directly from the ImageJ file.
-    limit = pixel_count/10
-    const_auto_threshold = 5000
-    auto_threshold = 0
-
-    auto_threshold = const_auto_threshold if auto_threshold <= 10 else auto_threshold/2
-    threshold = int(pixel_count/auto_threshold)
-
-    # setting the output min bin
-    i = -1
-    found = False
-    # going through all bins of the histogram in increasing order until you reach one where the count if more than
-    # pixel_count/auto_threshold
-    while not found and i <= 255:
-        i += 1
-        count = histogram[i]
-        if count > limit:
-            count = 0
-        found = count > threshold
-    hmin = i
-    found = False
-
-    # setting the output max bin : same thing but starting from the highest bin.
-    i = 256
-    while not found and i > 0:
-        i -= 1
-        count = histogram[i]
-        if count > limit:
-            count = 0
-        found = count > threshold
-    hmax = i
-
-    # compute output min and max pixel values from output min and max bins 
-    if hmax >= hmin:
-        min_ = hist_min + hmin * bin_size
-        max_ = hist_min + hmax * bin_size
-        # bad case number one, just return the min and max of the histogram
-        if min_ == max_:
-            min_ = hist_min
-            max_ = hist_max
-    # bad case number two, same
-    else:
-        min_ = hist_min
-        max_ = hist_max
-
-    # apply the contrast 
-    imr = (img_norm-min_) / (max_-min_)
-    
-    return imr
 
 def spindle_segmentation(img, lower_marker, higher_marker):
     """
-    This function segments the spindles using watershed method. The input of this
-    function is a still image (in array of float64), and the outputs are the 
-    segmented spindles (a bool/binary mask), the bounding box of each spindle
-    (detected objects), the centroid coordinators and local centroid (relating 
-    to the bounding box) of each spindle.
-    
-    Parameters
-    ----------
-    img: ndarray (2D)
-        Data array stands for the the normalised (0-1 scale) spindle image.
-        
-    Returns
-    -------
-    seg_spindle: ndarray of bool (2D)
-        The binary segmentation map.
-        
-    bbox_list: list
-        The list of bounding boxes (min_row, min_col, max_row, max_col) for 
-        each detected spindle.
-        
-    centroid_list: list
-        The list of centroid (row, col) for each detected spindle.
-    
-    centroid_local_list: list
-        The list of local centroid (row, col) relating to bounding box for 
-        each detected spindle.
-        
+    Backward-compatible wrapper for spindle segmentation.
+
+    Keeps script-level `opt.padding` behavior unchanged.
     """
-    
-    from scipy.ndimage import binary_fill_holes, label
-    from skimage.segmentation import watershed
-    from skimage.morphology import remove_small_objects
-    from skimage.measure import regionprops
-    
-    # segmentation of the spindle(s) using the traditional watershed method
-    # find the watershed markers of the background and the nuclei
-    markers = np.zeros_like(img)
-    markers[img < lower_marker] = 1
-    markers[img > higher_marker] = 2
-    # watershed segmentation of the spindles
-    seg_spindle = watershed(img, markers)
-    seg_spindle = binary_fill_holes(seg_spindle - 1)
-    # remove small objects with boolean input "seg"
-    seg_spindle = remove_small_objects(seg_spindle, 900)
-        
-    # generate spindle instance map based on the conventional watershed segmentation
-    spindle_instance, nr_spindle = label(seg_spindle)
-    # spindle regions cropping using skimage.measure.regionprops
-    # refer to https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
-    spindle_regions = regionprops(spindle_instance)
-    
-    # traversal the properties of each spindle
-    bbox_list = []
-    centroid_list= []
-    centroid_local_list = []
-    for i in range(0, len(spindle_regions)):
-        
-        # bounding box (min_row, min_col, max_row, max_col)
-        # pixels belonging to the bounding box are in the half-open interval 
-        # [min_row; max_row) and [min_col; max_col)
-        
-        # make the bounding box a square rather than rectangle
-        minr, minc, maxr, maxc = spindle_regions[i].bbox # load original bounding box
-        # Compute the center, width, and height of the bounding box
-        center_row, center_col = (minr + maxr) / 2, (minc + maxc) / 2
-        width, height = maxr - minr, maxc - minc
-        # Compute the size of the square bounding box by taking the maximum of width and height
-        size = max(width, height) + 2 * opt.padding  # add padding to both sides of the bounding box
-        # Compute the new bounding box coordinates
-        minr, maxr = center_row - size / 2, center_row + size / 2
-        minc, maxc = center_col - size / 2, center_col + size / 2
-        # Ensure the bounding box does not go beyond the image boundaries
-        minr, minc = max(0, minr), max(0, minc)
-        maxr, maxc = min(img.shape[0], maxr), min(img.shape[1], maxc)  
-        
-        # append the new bounding box to the list, 
-        # only append the new bounding box if it does not touch the image boundary
-        if minr > 0 and minc > 0 and maxr < img.shape[0] and maxc < img.shape[1]:
-            bbox_list.append((minr, minc, maxr, maxc))
-        
-            # centroidarray coordinate tuple (row, col)
-            centroid_list.append(spindle_regions[i].centroid)
-            # centroid_local shows the centroid coordinate tuple (row, col), 
-            # which is relative to region bounding box
-            centroid_local_list.append(spindle_regions[i].centroid_local)
-    
-    # define the function returns
-    return seg_spindle, bbox_list, centroid_list, centroid_local_list
+    return core_spindle_segmentation(
+        img=img,
+        lower_marker=lower_marker,
+        higher_marker=higher_marker,
+        padding=opt.padding,
+    )
+
 
 def bounding_box_plot(img, bbox_list):
+    """Plot one frame with bounding boxes for interactive inspection."""
+    return core_bounding_box_plot(img=img, bbox_list=bbox_list, linewidth=2)
+
+
+def bounding_box_plot_5d(
+    img_path, output_path, nr_frame, bbox_list_per_time, channel, start_frame
+):
     """
-    This function plots the bounding box for single frame on selected channel
-    for illustration purpose.
+    Write frame overlays as a multi-stacked TIFF for tracked spindles.
 
-    Parameters
-    ----------
-    img: ndarray (2D)
-        Data array stands for the the normalised (0-1 scale) spindle image.
-        
-    bbox_list: list
-        The list of bounding boxes (min_row, min_col, max_row, max_col) for 
-        each detected spindle.
-
-    Returns
-    -------
-    Currently none, the function only makes the plot for single frame on 
-    selected channel.
+    The `bbox_list_per_time` argument is accepted for compatibility and is not
+    used directly, matching prior behavior.
     """
-    
-    import matplotlib.patches as mpatches
-    
-    # define the figure and plot the original image
-    fig, ax = plt.subplots(figsize = (10, 10))
-    ax.imshow(img)
-    
-    # draw bounding boxes accordingly on the original image
-    for bboxes in bbox_list:
-        # draw rectangle around segmented coins
-        minr, minc, maxr, maxc = bboxes
-        rect = mpatches.Rectangle(
-            (minc, minr), maxc - minc, maxr - minr, 
-            fill = False, edgecolor = 'red', linewidth = 2)
-        ax.add_patch(rect)
-    
-    ax.set_axis_off()
-    plt.tight_layout()
-    plt.show()  
+    return write_tracking_overlay_tiff(
+        img_path=img_path,
+        output_path=output_path,
+        nr_frame=nr_frame,
+        channel=channel,
+        start_frame=start_frame,
+        tracked_items=tracked_spindles,
+        tracked_id_key="tracked_spindle_number",
+        channel_axis_last=True,
+    )
 
-def bounding_box_plot_5d(img_path, output_path, nr_frame, bbox_list_per_time, channel, start_frame):
-    """
-    This function plots the bounding boxes on the maximisation projection 
-    across all the z-slices for each time point. The overlay images will then 
-    stacked as a multi-stacked tiff file as the output.
-
-    Parameters
-    ----------
-    img_5d: ndarray
-        The 5D multi-stacked TIFF image with dimensions {TT, ZZ, XX, YY, CC}.
-        
-    bbox_list_per_time: list of list
-        A list containing bounding box lists for each time point.
-        
-    channel: int
-        The channel ID to visualise (i.e., brightfield or spindle channel).
-        
-    start_frame: int
-        The starting frame for tracking.
-    """
-    
-    import matplotlib.patches as mpatches
-    from skimage.io import imread, imsave
-
-    # the sample image (stacked-tiff) is at {TT, ZZ, XX, YY, CC} structure
-    img_5d = imread(img_path) # source image read
-    
-    # define number of frames to track 
-    num_time_points = nr_frame # nr_frame should be opt.nr_frames or img_5d.shape[0]
-    
-    output_images = [] # create an empty list output_images before the loop
-    
-    for t in range(num_time_points):
-        # maximisation projection across z-slices for the current time point 
-        # on specified channel
-        # (t + start_frame) stand for the relative frame ID if not start from frame 0
-        max_projected_img = np.max(img_5d[t + start_frame, :, :, :, channel], axis = 0)
-        
-        # define new figure size
-        # desired figure size in pixels
-        width_px, height_px = np.shape(max_projected_img)
-        dpi = 100  # set DPI
-        width_in = width_px / dpi
-        height_in = height_px / dpi
-        
-        # define the figure and plot the original image
-        fig, ax = plt.subplots(figsize = (width_in, height_in), dpi = dpi)
-        ax.imshow(max_projected_img, cmap = 'gray')
-        # ax.imshow(max_projected_img)
-        
-        # (t + start_frame) stand for the relative frame ID if not start from frame 0
-        tracked_spindles_at_frame = [spindle for spindle in tracked_spindles if spindle.get('frame_number') == (t + start_frame)]
-        
-        # plotting the bounding boxes for the current time point
-        for i in range(len(tracked_spindles_at_frame)):
-            # draw bounding box
-            minr, minc, maxr, maxc = tracked_spindles_at_frame[i]['bounding_box']
-            rect = mpatches.Rectangle(
-                (minc, minr), maxc - minc, maxr - minr, 
-                fill = False, edgecolor = 'red', linewidth = 2)
-            ax.add_patch(rect)
-            # draw text along with the bounding box to identify spindle_id
-            centroid_y, centroid_x = tracked_spindles_at_frame[i]['centroid']
-            spindle_id = tracked_spindles_at_frame[i]['tracked_spindle_number']
-            if spindle_id != None:
-                ax.text(
-                    minc + 5, minr + 25,
-                    # centroid_x, centroid_y, 
-                    str(spindle_id), 
-                    color = 'red', fontsize = 18
-                    )
-            elif spindle_id == None:
-                ax.text(
-                    minc + 5, minr + 25,
-                    # centroid_x, centroid_y, 
-                    "new",
-                    color = 'red', fontsize = 18
-                    )
-            
-        # capture the figure's image data without displaying it
-        ax.set_axis_off()
-        plt.subplots_adjust(left = 0, right = 1, bottom = 0, top = 1, wspace = 0, hspace = 0)
-        fig.canvas.draw()
-        data = np.array(fig.canvas.renderer.buffer_rgba())
-        output_images.append(data)
-        
-        plt.close(fig)
-        # plt.show()
-    
-    # save the images as a multi-stacked TIFF file
-    imsave(output_path, np.array(output_images))
 
 def spindles_to_csv(output_path, tracked_spindles):
-    """
-    This function converts the tracked_spindles to a csv file. The tracked_spindles 
-    should be a list of dictionary, and in the dictionary there are fields of
-    area (float), bounding_box (tuple), centroid (tuple), frame_number (int), 
-    spindle_number (int) and tracked_spindle_number (int).
-
-    Parameters
-    ----------
-    tracked_spindles : list (list of dictionary)
-        A list to store the tracked spindles across all frames, with an 
-        additional tracked_spindle_number field indicating the identity of 
-        the spindle across frames.
-        
-    output_path: str
-        The output path of the output csv file.
-
-    Returns
-    -------
-    This function will return and save a csv file containing tracked spindles 
-    information on selected path.
-    
-    """
-    
-    df = pd.DataFrame(tracked_spindles)
-
-    # sort the dataframe respectively for the tracked_spindle_number is or is not None
-    df_with_number = df[df['tracked_spindle_number'].notna()]
-    df_without_number = df[df['tracked_spindle_number'].isna()]
-
-    df_with_number = df_with_number.sort_values(by=['tracked_spindle_number', 'frame_number'])
-    df_without_number = df_without_number.sort_values(by=['frame_number', 'spindle_number'])
-
-    sorted_df = pd.concat([df_with_number, df_without_number])
-
-    # extract min_row, min_col, max_row, max_col from bounding_box
-    # extract centroid_row and centroid_col from centroid
-    sorted_df[['min_row', 'min_col', 'max_row', 'max_col']] = pd.DataFrame(
-        sorted_df['bounding_box'].tolist(), 
-        index = sorted_df.index
-        )
-    sorted_df[['centroid_row', 'centroid_col']] = pd.DataFrame(
-        sorted_df['centroid'].tolist(), 
-        index = sorted_df.index
-        )
-    # drop the bounding_box and centroid columns
-    sorted_df = sorted_df.drop(columns = ['bounding_box', 'centroid'])
-    
-    # fix the starting number of frame (fix from starting from 0 to starting from 1)
-    sorted_df['frame_number'] = sorted_df['frame_number'] + 1
-
-    # write to csv
-    sorted_df.to_csv(
-        output_path, 
-        columns = ['tracked_spindle_number', 'frame_number', 'min_row', 'min_col', 'max_row', 'max_col', 'centroid_row', 'centroid_col'], 
-        index = False
-        )
+    """Export tracked spindle records to the legacy CSV schema."""
+    return core_spindles_to_csv(output_path=output_path, tracked_spindles=tracked_spindles)
 
 ########## below code are the main flow for multi-spindle tracking ##########
     
